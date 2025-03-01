@@ -1,0 +1,65 @@
+[
+  {
+    "directory": "/Users/frityet/Documents/teal-parser-test",
+    "arguments": [
+      "/usr/local/opt/llvm/bin/clang",
+      "-c",
+      "-Qunused-arguments",
+      "-m64",
+      "-g",
+      "-O0",
+      "-std=gnu++2c",
+      "-fexperimental-library",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-Wno-c23-extensions",
+      "-o",
+      "build/.objs/teal-parser/macosx/x86_64/debug/teal/parser/Lexer.cpp.o",
+      "teal/parser/Lexer.cpp"
+    ],
+    "file": "teal/parser/Lexer.cpp"
+  },
+  {
+    "directory": "/Users/frityet/Documents/teal-parser-test",
+    "arguments": [
+      "/usr/local/opt/llvm/bin/clang",
+      "-c",
+      "-Qunused-arguments",
+      "-m64",
+      "-g",
+      "-O0",
+      "-std=gnu++2c",
+      "-fexperimental-library",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-Wno-c23-extensions",
+      "-o",
+      "build/.objs/teal-parser/macosx/x86_64/debug/teal/parser/Parser.cpp.o",
+      "teal/parser/Parser.cpp"
+    ],
+    "file": "teal/parser/Parser.cpp"
+  },
+  {
+    "directory": "/Users/frityet/Documents/teal-parser-test",
+    "arguments": [
+      "/usr/local/opt/llvm/bin/clang",
+      "-c",
+      "-Qunused-arguments",
+      "-m64",
+      "-g",
+      "-O0",
+      "-std=gnu++2c",
+      "-fexperimental-library",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-Wno-c23-extensions",
+      "-o",
+      "build/.objs/teal-parser/macosx/x86_64/debug/main.cpp.o",
+      "main.cpp"
+    ],
+    "file": "main.cpp"
+  }
+]
