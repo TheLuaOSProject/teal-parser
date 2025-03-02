@@ -1,17 +1,18 @@
 #pragma once
 
 #include <expected>
-#include <variant>
 #include <vector>
 #include <string>
 #include <cctype>
 #include <utility>
 #include <unordered_map>
 
+#include "Common.hpp"
+
 namespace teal
 {
     enum class TokenType {
-        EOF_, Name, Number, String,
+        EndOfFile, Name, Number, String,
         K_nil, K_true, K_false,
         K_function, K_end, K_do, K_if, K_then, K_else, K_elseif,
         K_while, K_repeat, K_until, K_for, K_in,
@@ -37,6 +38,11 @@ namespace teal
         std::string text;
         int line;
         int col;
+
+        static const Token NULLTOKEN;
+
+        constexpr bool isNullToken() const
+        { return this == &NULLTOKEN; }
 
         static constexpr inline bool typeIsTealKeyword(TokenType type)
         {
@@ -73,7 +79,7 @@ namespace teal
         constexpr std::string toString() const
         {
             switch (type) {
-                case TokenType::EOF_: return "EOF";
+                case TokenType::EndOfFile: return "EOF";
                 case TokenType::Name: return "Name("+text+")";
                 case TokenType::Number: return "Number("+text+")";
                 case TokenType::String: return "String(\"" + text + "\")";
@@ -172,22 +178,27 @@ namespace teal
 
         };
 
-        struct Error {
-            using Kind_t = std::variant<
-                InvalidCharacter,
-                InvalidLongStringDelimiter,
-                UnterminatedLongComment,
-                UnterminatedStringLiteral,
-                UnterminatedLongStringLiteral,
-                Overflow
-            >;
-            Kind_t kind;
-            int line;
-            int col;
-
-            // constexpr Error(const Error &) = default;
-            // constexpr Error(const Error &) = default;
-            // constexpr Error(Error &&) = default;
+        struct Error : public teal::Error <
+            InvalidCharacter,
+            InvalidLongStringDelimiter,
+            UnterminatedLongComment,
+            UnterminatedStringLiteral,
+            UnterminatedLongStringLiteral,
+            Overflow
+        > {
+            int line, column;
+        
+            constexpr inline std::string_view toString() const {
+                switch (kind.index()) {
+                    case 0: return "Invalid character";
+                    case 1: return "Invalid long string delimiter";
+                    case 2: return "Unterminated long ocmment";
+                    case 3: return "Unterminated string literal";
+                    case 4: return "Unterminated long string literal";
+                    case 5: return "Overflow";
+                    default: return "Unknown";
+                };
+            };
         };
 
         Lexer(const std::string &source)
@@ -204,16 +215,21 @@ namespace teal
         std::vector<Token> tokens;
         std::vector<Error> errors;
 
-        constexpr inline Error makeError(Error::Kind_t err)
-        { return { err, line, col }; }
+        [[gnu::const]]
+        constexpr inline Error makeError(Error::Kind_t err) const
+        { return { {err}, line, col }; }
 
         inline void pushError(Error::Kind_t err)
         {
             errors.push_back(makeError(err));
         }
+
+        [[gnu::pure]]
         inline char peekChar(int lookAhead = 0) const {
             return (pos+lookAhead < length and pos+lookAhead >= 0 ? src[pos+lookAhead] : '\0');
         }
+
+        [[gnu::pure]]
         inline std::optional<std::reference_wrapper<Token>> previousToken(int lookBehind = 1) {
             int idx = tokens.size() - lookBehind;
             if (idx < 0 or size_t(idx) > tokens.size()) return std::nullopt;

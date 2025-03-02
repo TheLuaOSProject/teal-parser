@@ -136,13 +136,14 @@ print(teal_parser)
     )",
 
     R"(
-        if type(4) == "number" then print "ok" end
+if type(4) == "number" then print "ok" end
     )",
 
     BIG
 };
 
 int main() {
+    std::cout << "Started...\n";
     teal::Lexer::Tests().runAll();
 
     int retval = EXIT_SUCCESS;
@@ -158,7 +159,7 @@ int main() {
         if (not lexErrors.empty()) {
             std::cerr << "  Errors encountered during lexing:\n";
             for (auto &err : lexErrors) {
-                std::cerr << std::format("    [tl.lua:{}:{}] {}", err.line, err.col, err.message) << std::endl;
+                std::cerr << std::format("    [tl.lua:{}:{}] {}", err.line, err.column, err.toString()) << std::endl;
             }
 
             continue;

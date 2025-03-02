@@ -3,3 +3,6 @@
 /build
 /teal.dylib
 /test.lua
+/t.c
+/compile_commands
+/NewLexer.*

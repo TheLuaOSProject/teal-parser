@@ -7,20 +7,27 @@ namespace teal
 
     class Parser {
     public:
+        struct Error {
+            std::string message;
+            int line, col;
+        };
+
         Parser(std::vector<Token> toks) : _tokens(std::move(toks)), _pos(0) {}
         std::unique_ptr<Block> parseChunk();
-        const std::vector<ParseError> &errors() const { return _errors; }
+        const std::vector<Error> &errors() const { return _errors; }
+
+
     private:
         std::vector<Token> _tokens;
         size_t _pos;
-        std::vector<ParseError> _errors;
+        std::vector<Error> _errors;
         // Helper functions to inspect and consume tokens
         const Token &peekToken(int forward = 0) const { return _tokens[_pos+forward]; }
-        bool isAtEnd() const { return peekToken().type == TokenType::EOF_; }
+        bool isAtEnd() const { return peekToken().type == TokenType::EndOfFile; }
         bool check(TokenType t) const { return peekToken().type == t; }
         bool match(TokenType t) { if (check(t)) { _pos++; return true; } return false; }
         bool matchAny(std::initializer_list<TokenType> types) {
-            if (check(TokenType::EOF_)) return false;
+            if (check(TokenType::EndOfFile)) return false;
             for (TokenType t : types) {
                 if (check(t)) { _pos++; return true; }
             }

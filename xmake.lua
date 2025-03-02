@@ -15,7 +15,7 @@
 
 add_rules("mode.debug", "mode.release")
 
-set_languages("gnuxx2c")
+set_languages("gnuxx26")
 
 target("teal-parser")
     add_files("teal/**.cpp")
@@ -25,4 +25,5 @@ target("teal-parser")
     add_cxxflags(
         "-Wall", "-Wextra", "-Werror",
         "-Wno-c23-extensions"
+        -- { force = true }
     )

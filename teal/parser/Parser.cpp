@@ -23,7 +23,7 @@ struct std::formatter<TokenType> {
 
         std::string_view name;
         switch (tk) {
-            case EOF_: name = "EOF"; break;
+            case EndOfFile: name = "EOF"; break;
             case Name: name = "Name"; break;
             case Number: name = "Number"; break;
             case String: name = "String"; break;
@@ -101,7 +101,7 @@ struct std::formatter<TokenType> {
     std::unique_ptr<Block> Parser::parseChunk() {
         auto block = std::make_unique<Block>();
         while (!isAtEnd()) {
-            if (check(TokenType::EOF_)) break;
+            if (check(TokenType::EndOfFile)) break;
             auto stmt = parseStat();
             if (stmt) block->statements.push_back(std::move(stmt));
         }
@@ -158,7 +158,7 @@ struct std::formatter<TokenType> {
             auto retStmt = std::make_unique<ReturnStatement>();
             if (not check(TokenType::Op_Semicolon) and not check(TokenType::K_end) and
                 not check(TokenType::K_else) and not check(TokenType::K_elseif) and
-                not check(TokenType::K_until) and not check(TokenType::EOF_)) {
+                not check(TokenType::K_until) and not check(TokenType::EndOfFile)) {
                 retStmt->values = parseExpressionList();
             }
             match(TokenType::Op_Semicolon);
@@ -254,7 +254,7 @@ struct std::formatter<TokenType> {
             auto st = parseStat();
             if (st) thenBlock->statements.push_back(std::move(st));
             if (check(TokenType::K_end) or check(TokenType::K_else) or
-                check(TokenType::K_elseif) or check(TokenType::K_until) or check(TokenType::EOF_)) {
+                check(TokenType::K_elseif) or check(TokenType::K_until) or check(TokenType::EndOfFile)) {
                 break;
             }
         }
@@ -272,7 +272,7 @@ struct std::formatter<TokenType> {
                 auto st = parseStat();
                 if (st) elseifBlock->statements.push_back(std::move(st));
                 if (check(TokenType::K_end) or check(TokenType::K_else) or
-                    check(TokenType::K_elseif) or check(TokenType::K_until) or check(TokenType::EOF_)) {
+                    check(TokenType::K_elseif) or check(TokenType::K_until) or check(TokenType::EndOfFile)) {
                     break;
                 }
             }
@@ -284,7 +284,7 @@ struct std::formatter<TokenType> {
             while (!check(TokenType::K_end) and !isAtEnd()) {
                 auto st = parseStat();
                 if (st) elseBlock->statements.push_back(std::move(st));
-                if (check(TokenType::K_end) or check(TokenType::K_until) or check(TokenType::EOF_)) break;
+                if (check(TokenType::K_end) or check(TokenType::K_until) or check(TokenType::EndOfFile)) break;
             }
             ifStmt->elseBlock = std::move(elseBlock);
         }
@@ -304,7 +304,7 @@ struct std::formatter<TokenType> {
         while (!check(TokenType::K_end) and !isAtEnd()) {
             auto st = parseStat();
             if (st) bodyBlock->statements.push_back(std::move(st));
-            if (check(TokenType::K_end) or check(TokenType::K_until) or check(TokenType::EOF_)) break;
+            if (check(TokenType::K_end) or check(TokenType::K_until) or check(TokenType::EndOfFile)) break;
         }
         consume(TokenType::K_end, "expected 'end' to close 'while'");
         whileStmt->body = std::move(bodyBlock);
@@ -318,7 +318,7 @@ struct std::formatter<TokenType> {
         while (!check(TokenType::K_until) and !isAtEnd()) {
             auto st = parseStat();
             if (st) bodyBlock->statements.push_back(std::move(st));
-            if (check(TokenType::K_until) or check(TokenType::EOF_)) break;
+            if (check(TokenType::K_until) or check(TokenType::EndOfFile)) break;
         }
         consume(TokenType::K_until, "expected 'until' after 'repeat' block");
         repeatStmt->body = std::move(bodyBlock);
@@ -353,7 +353,7 @@ struct std::formatter<TokenType> {
             while (!check(TokenType::K_end) and !isAtEnd()) {
                 auto st = parseStat();
                 if (st) bodyBlock->statements.push_back(std::move(st));
-                if (check(TokenType::K_end) or check(TokenType::EOF_)) break;
+                if (check(TokenType::K_end) or check(TokenType::EndOfFile)) break;
             }
             consume(TokenType::K_end, "expected 'end' to close 'for'");
             forNum->body = std::move(bodyBlock);
@@ -377,7 +377,7 @@ struct std::formatter<TokenType> {
             while (!check(TokenType::K_end) and !isAtEnd()) {
                 auto st = parseStat();
                 if (st) bodyBlock->statements.push_back(std::move(st));
-                if (check(TokenType::K_end) or check(TokenType::EOF_)) break;
+                if (check(TokenType::K_end) or check(TokenType::EndOfFile)) break;
             }
             consume(TokenType::K_end, "expected 'end' to close 'for'");
             auto forIn = std::make_unique<ForInStatement>();
@@ -394,7 +394,7 @@ struct std::formatter<TokenType> {
         while (!check(TokenType::K_end) and !isAtEnd()) {
             auto st = parseStat();
             if (st) blockNode->statements.push_back(std::move(st));
-            if (check(TokenType::K_end) or check(TokenType::EOF_)) break;
+            if (check(TokenType::K_end) or check(TokenType::EndOfFile)) break;
         }
         consume(TokenType::K_end, "expected 'end' to close 'do' block");
         return std::make_unique<DoStatement>(std::move(blockNode));
@@ -487,7 +487,7 @@ struct std::formatter<TokenType> {
         while (!check(TokenType::K_end) and !isAtEnd()) {
             auto st = parseStat();
             if (st) bodyBlock->statements.push_back(std::move(st));
-            if (check(TokenType::K_end) or check(TokenType::EOF_)) break;
+            if (check(TokenType::K_end) or check(TokenType::EndOfFile)) break;
         }
         consume(TokenType::K_end, "expected 'end' to close function");
         funcBody->body = std::move(bodyBlock);
@@ -799,7 +799,9 @@ struct std::formatter<TokenType> {
         if (t == TokenType::Op_LBrace) {
             return parseTableConstructor();
         }
-        if (t == TokenType::Name or t == TokenType::Op_LParen /*or t == TokenType::K_require*/) {
+
+        //heres where shit gets weird, teal keywords can be identifiers, and stuff like `type` is a teal keyword whilst also being a lua function
+        if (t == TokenType::Name or t == TokenType::Op_LParen) {
             return parsePrefixExpression();
         }
         _errors.push_back({std::format("unexpected token `{}` (type: {}) in expression", peekToken().text, peekToken().type), peekToken().line, peekToken().col});
@@ -940,7 +942,7 @@ struct std::formatter<TokenType> {
         while (!check(TokenType::K_end) and !isAtEnd()) {
             auto st = parseStat();
             if (st) bodyBlock->statements.push_back(std::move(st));
-            if (check(TokenType::K_end) or check(TokenType::EOF_)) break;
+            if (check(TokenType::K_end) or check(TokenType::EndOfFile)) break;
         }
         consume(TokenType::K_end, "expected 'end' to close function");
         funcBody->body = std::move(bodyBlock);

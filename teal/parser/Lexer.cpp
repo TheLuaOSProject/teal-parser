@@ -5,6 +5,9 @@
 
 using namespace teal;
 
+const Token Token::NULLTOKEN = Token(TokenType::EndOfFile, "", -1, -1);
+
+
 [[gnu::used]]
 static std::vector<std::string> split(const std::string &i, const std::string_view &d)
 {
@@ -52,158 +55,165 @@ std::expected<Token, Lexer::Error> Lexer::lex()
     }
     // Punctuators and operators
     switch (c) {
-    case '.':
-        getChar();
-        if (peekChar() == '.') {
+        case '.':
             getChar();
             if (peekChar() == '.') {
                 getChar();
-                return Token {TokenType::Op_VarArg, "...", tokLine, tokCol};
+                if (peekChar() == '.') {
+                    getChar();
+                    return Token {TokenType::Op_VarArg, "...", tokLine, tokCol};
+                } else {
+                    return Token {TokenType::Op_Concat, "..", tokLine, tokCol};
+                }
             } else {
-                return Token {TokenType::Op_Concat, "..", tokLine, tokCol};
+                return Token {TokenType::Op_Dot, ".", tokLine, tokCol};
             }
-        } else {
-            return Token {TokenType::Op_Dot, ".", tokLine, tokCol};
+
+        case '=':
+            getChar();
+            if (peekChar() == '=') {
+                getChar();
+                return Token {TokenType::Op_Equals, "==", tokLine, tokCol};
+            } else {
+                return Token {TokenType::Op_Assign, "=", tokLine, tokCol};
+            }
+
+        case '~':
+            getChar();
+            if (peekChar() == '=') {
+                getChar();
+                return Token {TokenType::Op_NotEq, "~=", tokLine, tokCol};
+            } else {
+                return Token {TokenType::Op_BitXor, "~", tokLine, tokCol};
+            }
+
+        case '<':
+            getChar();
+            if (peekChar() == '=') {
+                getChar();
+                return Token {TokenType::Op_LessEq, "<=", tokLine, tokCol};
+            } else if (peekChar() == '<') {
+                getChar();
+                return Token {TokenType::Op_ShiftL, "<<", tokLine, tokCol};
+            } else {
+                return Token {TokenType::Op_Less, "<", tokLine, tokCol};
+            }
+
+        case '>':
+            getChar();
+            if (peekChar() == '=') {
+                getChar();
+                return Token {TokenType::Op_GreaterEq, ">=", tokLine, tokCol};
+            } else if (peekChar() == '>') {
+                getChar();
+                return Token {TokenType::Op_ShiftR, ">>", tokLine, tokCol};
+            } else {
+                return Token {TokenType::Op_Greater, ">", tokLine, tokCol};
+            }
+
+        case ':':
+            getChar();
+            if (peekChar() == ':') {
+                getChar();
+                return Token {TokenType::Op_DoubleColon, "::", tokLine, tokCol};
+            } else {
+                return Token {TokenType::Op_Colon, ":", tokLine, tokCol};
+            }
+
+        case '(':
+            getChar();
+            return Token {TokenType::Op_LParen, "(", tokLine, tokCol};
+
+        case ')':
+            getChar();
+            return Token {TokenType::Op_RParen, ")", tokLine, tokCol};
+
+        case '[':
+            getChar();
+            return Token {TokenType::Op_LBracket, "[", tokLine, tokCol};
+
+        case ']':
+            getChar();
+            return Token {TokenType::Op_RBracket, "]", tokLine, tokCol};
+
+        case '{':
+            getChar();
+            return Token {TokenType::Op_LBrace, "{", tokLine, tokCol};
+
+        case '}':
+            getChar();
+            return Token {TokenType::Op_RBrace, "}", tokLine, tokCol};
+
+        case ',':
+            getChar();
+            return Token {TokenType::Op_Comma, ",", tokLine, tokCol};
+
+        case ';':
+            getChar();
+            return Token {TokenType::Op_Semicolon, ";", tokLine, tokCol};
+
+        case '+':
+            getChar();
+            return Token {TokenType::Op_Add, "+", tokLine, tokCol};
+
+        case '-':
+            getChar();
+            return Token {TokenType::Op_Sub, "-", tokLine, tokCol};
+
+        case '*':
+            getChar();
+            return Token {TokenType::Op_Mul, "*", tokLine, tokCol};
+
+        case '/':
+            getChar();
+            if (peekChar() == '/') {
+                getChar();
+                return Token {TokenType::Op_FloorDiv, "//", tokLine, tokCol};
+            } else {
+                return Token {TokenType::Op_Div, "/", tokLine, tokCol};
+            }
+
+        case '%':
+            getChar();
+            return Token {TokenType::Op_Mod, "%", tokLine, tokCol};
+
+        case '^':
+            getChar();
+            return Token {TokenType::Op_Pow, "^", tokLine, tokCol};
+
+        case '#':
+            getChar();
+            return Token {TokenType::Op_Len, "#", tokLine, tokCol};
+
+        case '?':
+            getChar();
+            return Token {TokenType::Op_Question, "?", tokLine, tokCol};
+
+        default: {
+            // Unknown character
+            // std::string msg = std::string("Unexpected character '") + c + "' (" + std::to_string((int)c) + ")";
+            // errors.push_back({msg, tokLine, tokCol});
+            return std::unexpected(makeError(InvalidCharacter(c)));
+            getChar();
         }
-
-    case '=':
-        getChar();
-        if (peekChar() == '=') {
-            getChar();
-            return Token {TokenType::Op_Equals, "==", tokLine, tokCol};
-        } else {
-            return Token {TokenType::Op_Assign, "=", tokLine, tokCol};
-        }
-
-    case '~':
-        getChar();
-        if (peekChar() == '=') {
-            getChar();
-            return Token {TokenType::Op_NotEq, "~=", tokLine, tokCol};
-        } else {
-            return Token {TokenType::Op_BitXor, "~", tokLine, tokCol};
-        }
-
-    case '<':
-        getChar();
-        if (peekChar() == '=') {
-            getChar();
-            return Token {TokenType::Op_LessEq, "<=", tokLine, tokCol};
-        } else if (peekChar() == '<') {
-            getChar();
-            return Token {TokenType::Op_ShiftL, "<<", tokLine, tokCol};
-        } else {
-            return Token {TokenType::Op_Less, "<", tokLine, tokCol};
-        }
-
-    case '>':
-        getChar();
-        if (peekChar() == '=') {
-            getChar();
-            return Token {TokenType::Op_GreaterEq, ">=", tokLine, tokCol};
-        } else if (peekChar() == '>') {
-            getChar();
-            return Token {TokenType::Op_ShiftR, ">>", tokLine, tokCol};
-        } else {
-            return Token {TokenType::Op_Greater, ">", tokLine, tokCol};
-        }
-
-    case ':':
-        getChar();
-        if (peekChar() == ':') {
-            getChar();
-            return Token {TokenType::Op_DoubleColon, "::", tokLine, tokCol};
-        } else {
-            return Token {TokenType::Op_Colon, ":", tokLine, tokCol};
-        }
-
-    case '(':
-        getChar();
-        return Token {TokenType::Op_LParen, "(", tokLine, tokCol};
-
-    case ')':
-        getChar();
-        return Token {TokenType::Op_RParen, ")", tokLine, tokCol};
-
-    case '[':
-        getChar();
-        return Token {TokenType::Op_LBracket, "[", tokLine, tokCol};
-
-    case ']':
-        getChar();
-        return Token {TokenType::Op_RBracket, "]", tokLine, tokCol};
-
-    case '{':
-        getChar();
-        return Token {TokenType::Op_LBrace, "{", tokLine, tokCol};
-
-    case '}':
-        getChar();
-        return Token {TokenType::Op_RBrace, "}", tokLine, tokCol};
-
-    case ',':
-        getChar();
-        return Token {TokenType::Op_Comma, ",", tokLine, tokCol};
-
-    case ';':
-        getChar();
-        return Token {TokenType::Op_Semicolon, ";", tokLine, tokCol};
-
-    case '+':
-        getChar();
-        return Token {TokenType::Op_Add, "+", tokLine, tokCol};
-
-    case '-':
-        getChar();
-        return Token {TokenType::Op_Sub, "-", tokLine, tokCol};
-
-    case '*':
-        getChar();
-        return Token {TokenType::Op_Mul, "*", tokLine, tokCol};
-
-    case '/':
-        getChar();
-        if (peekChar() == '/') {
-            getChar();
-            return Token {TokenType::Op_FloorDiv, "//", tokLine, tokCol};
-        } else {
-            return Token {TokenType::Op_Div, "/", tokLine, tokCol};
-        }
-
-    case '%':
-        getChar();
-        return Token {TokenType::Op_Mod, "%", tokLine, tokCol};
-
-    case '^':
-        getChar();
-        return Token {TokenType::Op_Pow, "^", tokLine, tokCol};
-
-    case '#':
-        getChar();
-        return Token {TokenType::Op_Len, "#", tokLine, tokCol};
-
-    case '?':
-        getChar();
-        return Token {TokenType::Op_Question, "?", tokLine, tokCol};
-
-    default: {
-        // Unknown character
-        // std::string msg = std::string("Unexpected character '") + c + "' (" + std::to_string((int)c) + ")";
-        // errors.push_back({msg, tokLine, tokCol});
-        return std::unexpected(makeError(InvalidCharacter(c)));
-        getChar();
     }
-    }
-
 
 }
 
 std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize() {
     auto lines = split(src, "\n");
     while (true) {
-
+        if (std::expected<Token, Error> val = lex()) {
+            tokens.push_back(*val);
+        } else {
+            auto e = val.error();
+            if (std::holds_alternative<Overflow>(e.kind)) {
+                tokens.push_back(Token { TokenType::EndOfFile, "<EOF>", line, col });
+                break;
+            } else errors.push_back(e);
+        }
     }
-    return {TokenType::EOF_, "<eof>", line, col};
+    // return {TokenType::EOF_, "<eof>", line, col};
     return {tokens, errors};
 }
 
@@ -305,8 +315,9 @@ void Lexer::Tests::unterminatedString() {
     // We expect at least one parse error.
     assert(!errors.empty());
     bool foundError = false;
-    for (const auto& err : errors) {
-        if (err.message.find("Unterminated string literal") != std::string::npos) {
+    for (const auto &err : errors) {
+        // if (err.message.find("Unterminated string literal") != std::string::npos) {
+        if (std::holds_alternative<UnterminatedStringLiteral>(err.kind)) {
             foundError = true;
             break;
         }
@@ -324,7 +335,7 @@ void Lexer::Tests::invalidLongStringDelimiter() {
     assert(!errors.empty());
     bool foundError = false;
     for (const auto& err : errors) {
-        if (err.message.find("Unterminated long string literal") != std::string::npos) {
+        if (std::holds_alternative<UnterminatedLongStringLiteral>(err.kind)) {
             foundError = true;
             break;
         }
