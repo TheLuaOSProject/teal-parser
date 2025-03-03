@@ -5,7 +5,7 @@
 
 using namespace teal;
 
-const Token Token::NULLTOKEN = Token(TokenType::EndOfFile, "", -1, -1);
+const Token Token::NULLTOKEN = Token {TokenType::EndOfFile, "", -1, -1};
 
 
 [[gnu::used]]
@@ -29,19 +29,20 @@ static std::vector<std::string> split(const std::string &i, const std::string_vi
 
 std::expected<Token, Lexer::Error> Lexer::lex()
 {
+    // if (line >= 1721)
+    //     std::printf("buggy comments");
     skipWhitespace();
-    if (pos >= length) return std::unexpected(makeError(Overflow()));
-    skipComment();
+    if (_pos >= _length) return std::unexpected(makeError(Overflow {}));
     skipWhitespace();
-    if (pos >= length) return std::unexpected(makeError(Overflow()));
+    if (_pos >= _length) return std::unexpected(makeError(Overflow {}));
 
-    char c = peekChar();
-    if (pos >= length) return std::unexpected(makeError(Overflow()));
-    int tokLine = line;
-    int tokCol = col;
+    char c = peek();
+    if (_pos >= _length) return std::unexpected(makeError(Overflow {}));
+    int tokLine = _line;
+    int tokCol = _col;
 
 
-    if (c == '\"' or c == '\'' or (c == '[' and (peekChar(1) == '[' or peekChar(1) == '='))) {
+    if (c == '\"' or c == '\'' or (c == '[' and (peek(1) == '[' or peek(1) == '='))) {
         return readString();
         //
     }
@@ -56,11 +57,11 @@ std::expected<Token, Lexer::Error> Lexer::lex()
     // Punctuators and operators
     switch (c) {
         case '.':
-            getChar();
-            if (peekChar() == '.') {
-                getChar();
-                if (peekChar() == '.') {
-                    getChar();
+            consume();
+            if (peek() == '.') {
+                consume();
+                if (peek() == '.') {
+                    consume();
                     return Token {TokenType::Op_VarArg, "...", tokLine, tokCol};
                 } else {
                     return Token {TokenType::Op_Concat, "..", tokLine, tokCol};
@@ -70,159 +71,162 @@ std::expected<Token, Lexer::Error> Lexer::lex()
             }
 
         case '=':
-            getChar();
-            if (peekChar() == '=') {
-                getChar();
+            consume();
+            if (peek() == '=') {
+                consume();
                 return Token {TokenType::Op_Equals, "==", tokLine, tokCol};
             } else {
                 return Token {TokenType::Op_Assign, "=", tokLine, tokCol};
             }
 
         case '~':
-            getChar();
-            if (peekChar() == '=') {
-                getChar();
+            consume();
+            if (peek() == '=') {
+                consume();
                 return Token {TokenType::Op_NotEq, "~=", tokLine, tokCol};
             } else {
                 return Token {TokenType::Op_BitXor, "~", tokLine, tokCol};
             }
 
         case '<':
-            getChar();
-            if (peekChar() == '=') {
-                getChar();
+            consume();
+            if (peek() == '=') {
+                consume();
                 return Token {TokenType::Op_LessEq, "<=", tokLine, tokCol};
-            } else if (peekChar() == '<') {
-                getChar();
+            } else if (peek() == '<') {
+                consume();
                 return Token {TokenType::Op_ShiftL, "<<", tokLine, tokCol};
             } else {
                 return Token {TokenType::Op_Less, "<", tokLine, tokCol};
             }
 
         case '>':
-            getChar();
-            if (peekChar() == '=') {
-                getChar();
+            consume();
+            if (peek() == '=') {
+                consume();
                 return Token {TokenType::Op_GreaterEq, ">=", tokLine, tokCol};
-            } else if (peekChar() == '>') {
-                getChar();
+            } else if (peek() == '>') {
+                consume();
                 return Token {TokenType::Op_ShiftR, ">>", tokLine, tokCol};
             } else {
                 return Token {TokenType::Op_Greater, ">", tokLine, tokCol};
             }
 
         case ':':
-            getChar();
-            if (peekChar() == ':') {
-                getChar();
+            consume();
+            if (peek() == ':') {
+                consume();
                 return Token {TokenType::Op_DoubleColon, "::", tokLine, tokCol};
             } else {
                 return Token {TokenType::Op_Colon, ":", tokLine, tokCol};
             }
 
         case '(':
-            getChar();
+            consume();
             return Token {TokenType::Op_LParen, "(", tokLine, tokCol};
 
         case ')':
-            getChar();
+            consume();
             return Token {TokenType::Op_RParen, ")", tokLine, tokCol};
 
         case '[':
-            getChar();
+            consume();
             return Token {TokenType::Op_LBracket, "[", tokLine, tokCol};
 
         case ']':
-            getChar();
+            consume();
             return Token {TokenType::Op_RBracket, "]", tokLine, tokCol};
 
         case '{':
-            getChar();
+            consume();
             return Token {TokenType::Op_LBrace, "{", tokLine, tokCol};
 
         case '}':
-            getChar();
+            consume();
             return Token {TokenType::Op_RBrace, "}", tokLine, tokCol};
 
         case ',':
-            getChar();
+            consume();
             return Token {TokenType::Op_Comma, ",", tokLine, tokCol};
 
         case ';':
-            getChar();
+            consume();
             return Token {TokenType::Op_Semicolon, ";", tokLine, tokCol};
 
         case '+':
-            getChar();
+            consume();
             return Token {TokenType::Op_Add, "+", tokLine, tokCol};
 
         case '-':
-            getChar();
-            return Token {TokenType::Op_Sub, "-", tokLine, tokCol};
+            if (skipComment()) {
+                return lex(); //ignore the line and lex the other lines
+            } else {
+                consume();
+                return Token {TokenType::Op_Sub, "-", tokLine, tokCol};
+            }
 
         case '*':
-            getChar();
+            consume();
             return Token {TokenType::Op_Mul, "*", tokLine, tokCol};
 
         case '/':
-            getChar();
-            if (peekChar() == '/') {
-                getChar();
+            consume();
+            if (peek() == '/') {
+                consume();
                 return Token {TokenType::Op_FloorDiv, "//", tokLine, tokCol};
             } else {
                 return Token {TokenType::Op_Div, "/", tokLine, tokCol};
             }
 
         case '%':
-            getChar();
+            consume();
             return Token {TokenType::Op_Mod, "%", tokLine, tokCol};
 
         case '^':
-            getChar();
+            consume();
             return Token {TokenType::Op_Pow, "^", tokLine, tokCol};
 
         case '#':
-            getChar();
+            consume();
             return Token {TokenType::Op_Len, "#", tokLine, tokCol};
 
         case '?':
-            getChar();
+            consume();
             return Token {TokenType::Op_Question, "?", tokLine, tokCol};
+
+        case '|':
+            consume();
+            return Token { TokenType::Op_BitOr, "|", tokLine, tokCol };
 
         default: {
             // Unknown character
             // std::string msg = std::string("Unexpected character '") + c + "' (" + std::to_string((int)c) + ")";
             // errors.push_back({msg, tokLine, tokCol});
-            return std::unexpected(makeError(InvalidCharacter(c)));
-            getChar();
+            return std::unexpected(makeError(InvalidCharacter {c}));
+            consume();
         }
     }
-
 }
 
 std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize() {
-    auto lines = split(src, "\n");
+    auto lines = split(_src, "\n");
     while (true) {
         if (std::expected<Token, Error> val = lex()) {
-            tokens.push_back(*val);
+            _tokens.push_back(*val);
         } else {
+            if (_errors.size() >= maxErrors) {
+                _errors.push_back(makeError(TooManyErrors {_errors.size()}));
+                break;
+            }
             auto e = val.error();
             if (std::holds_alternative<Overflow>(e.kind)) {
-                tokens.push_back(Token { TokenType::EndOfFile, "<EOF>", line, col });
+                _tokens.push_back(Token { TokenType::EndOfFile, "<EOF>", _line, _col });
                 break;
-            } else errors.push_back(e);
+            } else _errors.push_back(e);
         }
     }
     // return {TokenType::EOF_, "<eof>", line, col};
-    return {tokens, errors};
-}
-
-// Helper function to print tokens for debugging (if needed)
-void printTokens(const std::vector<teal::Token>& tokens) {
-    for (const auto& token : tokens) {
-        std::cout << "Line " << token.line << ", Col " << token.col
-                  << ": " << static_cast<int>(token.type) << " -> " << token.text << "\n";
-    }
+    return {_tokens, _errors};
 }
 
 void Lexer::Tests::basicKeyword() {

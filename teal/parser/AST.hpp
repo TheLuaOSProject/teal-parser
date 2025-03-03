@@ -238,7 +238,7 @@ namespace teal
         std::vector<std::unique_ptr<TypeNode>> interfaceExt;
         std::unique_ptr<Expression> whereClause;
         struct Entry {
-            enum class Kind { Field, Userdata, TypeAlias, Record, Enum } kind;
+            enum class Kind { Field, Userdata, TypeAlias, Record, Enum, Interface } kind;
             bool isMetamethod;
             std::optional<std::string> fieldName;
             std::optional<std::string> fieldKeyLiteral;

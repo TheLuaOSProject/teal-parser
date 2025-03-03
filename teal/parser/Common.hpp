@@ -16,8 +16,7 @@
 #pragma once
 
 #include <variant>
-#include <wchar.h>
-#include <cmath>
+#include <format>
 
 namespace teal
 {
@@ -34,7 +33,7 @@ static constexpr bool operator->*(const std::variant<T...> &variant, TExpected *
     try {
         *expected = std::get<TExpected>(variant);
         return true;
-    } catch (const std::bad_variant_access &) {
+    } catch (std::bad_variant_access) {
         return false;
     }
 }

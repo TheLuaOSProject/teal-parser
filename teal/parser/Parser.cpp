@@ -1,7 +1,9 @@
 #include "Parser.hpp"
+#include "AST.hpp"
 #include "Lexer.hpp"
 
 #include <format>
+#include <cassert>
 
 using namespace teal;
 
@@ -10,7 +12,7 @@ struct std::formatter<Token> {
     constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
 
     constexpr auto format(const Token &tk, std::format_context& ctx) const {
-        return std::format_to(ctx.out(), "{} at {}:{}", tk.toString(), tk.line, tk.col);
+        return std::format_to(ctx.out(), "Token {{.kind=\"{}\", .at={}:{}}}", tk.toString(), tk.line, tk.col);
     }
 };
 
@@ -170,7 +172,7 @@ struct std::formatter<TokenType> {
         case TokenType::K_goto: {
             _pos++;
             if (!check(TokenType::Name)) {
-                _errors.push_back({"expected label name after 'goto'", peekToken().line, peekToken().col});
+                pushError("expected label name after 'goto'");
                 return nullptr;
             }
             std::string labelName = peekToken().text;
@@ -193,7 +195,7 @@ struct std::formatter<TokenType> {
         if (check(TokenType::Op_Assign) or check(TokenType::Op_Comma)) {
             // It's an assignment
             if (dynamic_cast<FunctionCallExpression*>(prefix.get())) {
-                _errors.push_back({"cannot assign to function call", peekToken().line, peekToken().col});
+                pushError("cannot assign to function call");
                 prefix = std::make_unique<NameExpression>("_error_");
             }
             auto assign = std::make_unique<AssignmentStatement>();
@@ -201,7 +203,7 @@ struct std::formatter<TokenType> {
             while (match(TokenType::Op_Comma)) {
                 auto var = parseVarExpression();
                 if (!var) {
-                    _errors.push_back({"expected variable", peekToken().line, peekToken().col});
+                    pushError("expected variable");
                     if (check(TokenType::Op_Comma)) { _pos++; continue; }
                     break;
                 }
@@ -210,14 +212,14 @@ struct std::formatter<TokenType> {
             consume(TokenType::Op_Assign, "expected '=' in assignment");
             assign->rhs = parseExpressionList();
             if (assign->rhs.empty()) {
-                _errors.push_back({"expected expression after '='", peekToken().line, peekToken().col});
+                pushError("expected expression after '='");
             }
             return assign;
         } else {
             // Must be a function call statement
             auto callExpression = dynamic_cast<FunctionCallExpression*>(prefix.get());
             if (!callExpression) {
-                _errors.push_back({"unexpected expression statement", peekToken().line, peekToken().col});
+                pushError("unexpected expression statement");
                 skipToNextStatement();
                 return nullptr;
             }
@@ -230,7 +232,7 @@ struct std::formatter<TokenType> {
     std::unique_ptr<Statement> Parser::parseLabel() {
         consume(TokenType::Op_DoubleColon, "internal error: '::' expected for label");
         if (!check(TokenType::Name)) {
-            _errors.push_back({"expected label name after '::'", peekToken().line, peekToken().col});
+            pushError("expected label name after '::'");
             return nullptr;
         }
         std::string name = peekToken().text;
@@ -244,7 +246,7 @@ struct std::formatter<TokenType> {
         auto ifStmt = std::make_unique<IfStatement>();
         auto cond = parseExpression();
         if (!cond) {
-            _errors.push_back({"expected condition after 'if'", peekToken().line, peekToken().col});
+            pushError("expected condition after 'if'");
         }
         consume(TokenType::K_then, "expected 'then' after condition");
         // Parse the 'then' block
@@ -263,7 +265,7 @@ struct std::formatter<TokenType> {
         while (match(TokenType::K_elseif)) {
             auto elseifCond = parseExpression();
             if (!elseifCond) {
-                _errors.push_back({"expected condition after 'elseif'", peekToken().line, peekToken().col});
+                pushError("expected condition after 'elseif'");
             }
             consume(TokenType::K_then, "expected 'then' after condition");
             auto elseifBlock = std::make_unique<Block>();
@@ -297,7 +299,7 @@ struct std::formatter<TokenType> {
         auto whileStmt = std::make_unique<WhileStatement>();
         whileStmt->condition = parseExpression();
         if (!whileStmt->condition) {
-            _errors.push_back({"expected condition after 'while'", peekToken().line, peekToken().col});
+            pushError("expected condition after 'while'");
         }
         consume(TokenType::K_do, "expected 'do' after condition");
         auto bodyBlock = std::make_unique<Block>();
@@ -324,7 +326,7 @@ struct std::formatter<TokenType> {
         repeatStmt->body = std::move(bodyBlock);
         repeatStmt->condition = parseExpression();
         if (!repeatStmt->condition) {
-            _errors.push_back({"expected condition after 'until'", peekToken().line, peekToken().col});
+            pushError("expected condition after 'until'");
         }
         return repeatStmt;
     }
@@ -332,7 +334,7 @@ struct std::formatter<TokenType> {
     std::unique_ptr<Statement> Parser::parseFor() {
         consume(TokenType::K_for, "internal error: 'for' expected");
         if (!check(TokenType::Name)) {
-            _errors.push_back({"expected identifier after 'for'", peekToken().line, peekToken().col});
+            pushError("expected identifier after 'for'");
             skipToNextStatement();
             return nullptr;
         }
@@ -364,7 +366,7 @@ struct std::formatter<TokenType> {
             nameList.push_back(varName);
             while (match(TokenType::Op_Comma)) {
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected name in for-in loop", peekToken().line, peekToken().col});
+                    pushError("expected name in for-in loop");
                     break;
                 }
                 nameList.push_back(peekToken().text);
@@ -403,7 +405,7 @@ struct std::formatter<TokenType> {
     std::unique_ptr<Statement> Parser::parseFunctionDecl(bool isLocal, bool isGlobal) {
         // 'function' keyword already consumed
         if (!check(TokenType::Name)) {
-            _errors.push_back({"expected function name after 'function'", peekToken().line, peekToken().col});
+            pushError("expected function name after 'function'");
         }
         std::vector<std::string> namePath;
         std::string methodName;
@@ -415,7 +417,7 @@ struct std::formatter<TokenType> {
         while (true) {
             if (match(TokenType::Op_Dot)) {
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected name after '.' in function name", peekToken().line, peekToken().col});
+                    pushError("expected name after '.' in function name");
                     break;
                 }
                 namePath.push_back(peekToken().text);
@@ -423,7 +425,7 @@ struct std::formatter<TokenType> {
             } else if (match(TokenType::Op_Colon)) {
                 isMethod = true;
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected name after ':' in function name", peekToken().line, peekToken().col});
+                    pushError("expected name after ':' in function name");
                 } else {
                     methodName = peekToken().text;
                     _pos++;
@@ -437,7 +439,7 @@ struct std::formatter<TokenType> {
         auto funcBody = std::make_unique<FunctionBody>();
         if (match(TokenType::Op_Less)) {  // generic type parameters
             if (!check(TokenType::Name)) {
-                _errors.push_back({"expected type parameter name", peekToken().line, peekToken().col});
+                pushError("expected type parameter name");
             }
             while (check(TokenType::Name)) {
                 funcBody->typeParams.push_back(peekToken().text);
@@ -459,7 +461,7 @@ struct std::formatter<TokenType> {
                     break;
                 }
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected parameter name or '...'", peekToken().line, peekToken().col});
+                    pushError("expected parameter name or '...'");
                     if (check(TokenType::Op_RParen)) break;
                     _pos++;
                 } else {
@@ -504,7 +506,7 @@ struct std::formatter<TokenType> {
         auto varStmt = std::make_unique<VariableDeclarationStatement>(isLocal, isGlobal);
         auto names = parseAttNameList();
         if (names.empty()) {
-            _errors.push_back({"expected variable name", peekToken().line, peekToken().col});
+            pushError("expected variable name");
         }
         varStmt->names = std::move(names);
         if (match(TokenType::Op_Colon)) {
@@ -516,7 +518,7 @@ struct std::formatter<TokenType> {
         if (!isLocal and isGlobal) {
             // In Teal, global var must have a type or an initializer
             if (varStmt->types.empty() and varStmt->values.empty()) {
-                _errors.push_back({"global variable must have type or initial value", peekToken().line, peekToken().col});
+                pushError("global variable must have type or initial value");
             }
         }
         return varStmt;
@@ -524,8 +526,8 @@ struct std::formatter<TokenType> {
 
     std::unique_ptr<Statement> Parser::parseRecordDecl(bool isLocal, bool isGlobal, bool isInterface) {
         // 'record' or 'interface' already consumed
-        if (!check(TokenType::Name)) {
-            _errors.push_back({std::string("expected name after '") + (isInterface ? "interface" : "record") + "'", peekToken().line, peekToken().col});
+        if (not check(TokenType::Name)) {
+            pushError(std::format("expected name after `{}` got {}", isInterface ? "interface" : "record", peekToken()));
             return nullptr;
         }
         std::string name = peekToken().text;
@@ -537,7 +539,7 @@ struct std::formatter<TokenType> {
     std::unique_ptr<Statement> Parser::parseEnumDecl(bool isLocal, bool isGlobal) {
         // 'enum' already consumed
         if (!check(TokenType::Name)) {
-            _errors.push_back({"expected name after 'enum'", peekToken().line, peekToken().col});
+            pushError("expected name after 'enum'");
             return nullptr;
         }
         std::string name = peekToken().text;
@@ -549,7 +551,7 @@ struct std::formatter<TokenType> {
     std::unique_ptr<Statement> Parser::parseTypeAliasDecl(bool isLocal, bool isGlobal) {
         // 'type' already consumed
         if (!check(TokenType::Name)) {
-            _errors.push_back({"expected name after 'type'", peekToken().line, peekToken().col});
+            pushError("expected name after 'type'");
             return nullptr;
         }
         std::string name = peekToken().text;
@@ -593,7 +595,7 @@ struct std::formatter<TokenType> {
             }
         } else {
             if (isLocal) {
-                _errors.push_back({"expected '=' in local type alias", peekToken().line, peekToken().col});
+                pushError("expected '=' in local type alias");
             }
             // global type alias may be declared without definition (forward declaration)
         }
@@ -611,7 +613,7 @@ struct std::formatter<TokenType> {
             _pos++;
             if (match(TokenType::Op_Less)) {  // attribute like <const>
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected attribute name in '< >'", peekToken().line, peekToken().col});
+                    pushError("expected attribute name in '< >'");
                 } else {
                     na.attrib = peekToken().text;
                     _pos++;
@@ -632,7 +634,7 @@ struct std::formatter<TokenType> {
         _pos++;
         while (match(TokenType::Op_Comma)) {
             if (!check(TokenType::Name)) {
-                _errors.push_back({"expected name after ','", peekToken().line, peekToken().col});
+                pushError("expected name after ','");
                 break;
             }
             list.push_back(peekToken().text);
@@ -654,7 +656,7 @@ struct std::formatter<TokenType> {
             if (e) {
                 exprs.push_back(std::move(e));
             } else {
-                _errors.push_back({"expected expression after ','", peekToken().line, peekToken().col});
+                pushError("expected expression after ','");
                 if (!check(TokenType::Op_Comma)) break;
             }
         }
@@ -670,7 +672,7 @@ struct std::formatter<TokenType> {
             base = std::make_unique<NameExpression>(peekToken().text);
             _pos++;
         } else {
-            _errors.push_back({"expected '(' or Name", peekToken().line, peekToken().col});
+            pushError(std::format("expected '(' or Name, got {}", peekToken()));
             return nullptr;
         }
         // Parse any number of suffix operators: field access, index, call, method call
@@ -678,7 +680,7 @@ struct std::formatter<TokenType> {
             if (match(TokenType::Op_Colon)) {
                 // Method call: object:method(args)
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected method name after ':'", peekToken().line, peekToken().col});
+                    pushError("expected method name after ':'");
                     break;
                 }
                 std::string method = peekToken().text;
@@ -696,7 +698,7 @@ struct std::formatter<TokenType> {
                     args.push_back(std::make_unique<StringExpression>(peekToken().text));
                     _pos++;
                 } else {
-                    _errors.push_back({"expected arguments after method call", peekToken().line, peekToken().col});
+                    pushError("expected arguments after method call");
                 }
                 auto call = std::make_unique<FunctionCallExpression>(std::move(base), method);
                 for (auto &arg : args) call->args.push_back(std::move(arg));
@@ -746,7 +748,7 @@ struct std::formatter<TokenType> {
                     }
 
                     if (not ok) {
-                        _errors.push_back({std::format("expected field name after '.', got `{}`", peekToken().type), peekToken().line, peekToken().col});
+                        pushError(std::format("expected field name after '.', got `{}`", peekToken().type));
                         break;
                     }
                 }
@@ -770,7 +772,7 @@ struct std::formatter<TokenType> {
         auto expr = parsePrefixExpression();
         if (!expr) return nullptr;
         if (dynamic_cast<FunctionCallExpression*>(expr.get())) {
-            _errors.push_back({"unexpected function call in assignment", peekToken().line, peekToken().col});
+            pushError("unexpected function call in assignment");
             return std::make_unique<NameExpression>("_error_");
         }
         return expr;
@@ -801,10 +803,10 @@ struct std::formatter<TokenType> {
         }
 
         //heres where shit gets weird, teal keywords can be identifiers, and stuff like `type` is a teal keyword whilst also being a lua function
-        if (t == TokenType::Name or t == TokenType::Op_LParen) {
+        if (t == TokenType::Name or t == TokenType::Op_LParen or Token::typeIsTealKeyword(t)) {
             return parsePrefixExpression();
         }
-        _errors.push_back({std::format("unexpected token `{}` (type: {}) in expression", peekToken().text, peekToken().type), peekToken().line, peekToken().col});
+        pushError(std::format("unexpected token `{}` (type: {}) in expression", peekToken().text, peekToken().type));
         return nullptr;
     }
 
@@ -893,7 +895,7 @@ struct std::formatter<TokenType> {
         auto funcBody = std::make_unique<FunctionBody>();
         if (match(TokenType::Op_Less)) {
             if (!check(TokenType::Name)) {
-                _errors.push_back({"expected type parameter name", peekToken().line, peekToken().col});
+                pushError("expected type parameter name");
             }
             while (check(TokenType::Name)) {
                 funcBody->typeParams.push_back(peekToken().text);
@@ -915,7 +917,7 @@ struct std::formatter<TokenType> {
                     break;
                 }
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected parameter name or '...'", peekToken().line, peekToken().col});
+                    pushError("expected parameter name or '...'");
                     if (check(TokenType::Op_RParen)) break;
                     _pos++;
                 } else {
@@ -1003,7 +1005,7 @@ struct std::formatter<TokenType> {
         } else {
             firstType = parseBaseType();
         }
-        if (!firstType) {
+        if (not firstType) {
             firstType = std::make_unique<BasicTypeNode>("nil");
         }
         if (check(TokenType::Op_BitOr)) {
@@ -1020,17 +1022,18 @@ struct std::formatter<TokenType> {
         return firstType;
     }
 
+    constexpr inline bool isPrimitive(const std::string_view &name)
+    {
+        return name == "string" or name == "integer" or name == "number" or name == "boolean" or name == "nil"; 
+    }
+
     std::unique_ptr<TypeNode> Parser::parseBaseType() {
         if (check(TokenType::Name)) {
             std::string name = peekToken().text;
-            // Check if it's a primitive type name
-            if (name == "string" or name == "number" or name == "boolean" or name == "nil") {
+            if (isPrimitive(name)) {
                 _pos++;
                 return std::make_unique<BasicTypeNode>(name);
-            }
-        }
-        if (check(TokenType::Name)) {
-            return parseNominalType();
+            } else return parseNominalType();
         }
         if (check(TokenType::Op_LBrace)) {
             _pos++;
@@ -1074,7 +1077,7 @@ struct std::formatter<TokenType> {
         if (check(TokenType::K_function)) {
             return parseFunctionType();
         }
-        _errors.push_back({"expected type", peekToken().line, peekToken().col});
+        pushError(std::format("expected type, got {}", peekToken()));
         return nullptr;
     }
 
@@ -1088,7 +1091,7 @@ struct std::formatter<TokenType> {
         _pos++;
         while (match(TokenType::Op_Dot)) {
             if (!check(TokenType::Name)) {
-                _errors.push_back({"expected name after '.' in type name", peekToken().line, peekToken().col});
+                pushError("expected name after '.' in type name");
                 break;
             }
             nameParts.push_back(peekToken().text);
@@ -1097,7 +1100,7 @@ struct std::formatter<TokenType> {
         std::vector<std::string> typeArgs;
         if (match(TokenType::Op_Less)) {
             if (!check(TokenType::Name)) {
-                _errors.push_back({"expected type name in type arguments", peekToken().line, peekToken().col});
+                pushError("expected type name in type arguments");
             }
             while (check(TokenType::Name)) {
                 typeArgs.push_back(peekToken().text);
@@ -1114,7 +1117,7 @@ struct std::formatter<TokenType> {
         auto node = std::make_unique<FunctionTypeNode>();
         if (match(TokenType::Op_Less)) {
             if (!check(TokenType::Name)) {
-                _errors.push_back({"expected type parameter name", peekToken().line, peekToken().col});
+                pushError("expected type parameter name");
             }
             while (check(TokenType::Name)) {
                 node->typeParams.push_back(peekToken().text);
@@ -1127,12 +1130,18 @@ struct std::formatter<TokenType> {
         if (!check(TokenType::Op_RParen)) {
             while (true) {
                 FunctionTypeNode::ParamType param;
-                if (check(TokenType::Name)) {
-                    param.name = peekToken().text;
-                    _pos++;
-                    param.isOptional = false;
-                    if (match(TokenType::Op_Question)) param.isOptional = true;
-                    consume(TokenType::Op_Colon, "expected ':' after parameter name");
+                if (check(TokenType::Name) or check(TokenType::Op_VarArg)) {
+                    if (peekToken(1).type == TokenType::Op_Question or peekToken(1).type == TokenType::Op_Colon) {
+                        param.name = peekToken().text;
+                        _pos++;
+                        param.isOptional = false;
+                        if (match(TokenType::Op_Question)) param.isOptional = true;
+                        consume(TokenType::Op_Colon, "expected ':' after parameter name");
+                    } else { //anon param
+                        param.name.reset();
+                        param.isOptional = false;
+                    }
+
                     param.type = parseType();
                 } else if (match(TokenType::Op_Question)) {
                     param.name.reset();
@@ -1193,8 +1202,8 @@ struct std::formatter<TokenType> {
     std::unique_ptr<RecordBody> Parser::parseRecordBody() {
         auto rb = std::make_unique<RecordBody>();
         if (match(TokenType::Op_Less)) {
-            if (!check(TokenType::Name)) {
-                _errors.push_back({"expected type parameter name", peekToken().line, peekToken().col});
+            if (not check(TokenType::Name)) {
+                pushError("expected type parameter name");
             }
             while (check(TokenType::Name)) {
                 rb->typeParams.push_back(peekToken().text);
@@ -1209,10 +1218,10 @@ struct std::formatter<TokenType> {
         if (match(TokenType::K_where)) {
             rb->whereClause = parseExpression();
             if (!rb->whereClause) {
-                _errors.push_back({"expected expression after 'where'", peekToken().line, peekToken().col});
+                pushError("expected expression after 'where'");
             }
         }
-        while (!check(TokenType::K_end) and !isAtEnd()) {
+        while (not check(TokenType::K_end) and not isAtEnd()) {
             RecordBody::Entry entry;
             if (check(TokenType::Name) and peekToken().text == "userdata") {
                 _pos++;
@@ -1220,9 +1229,11 @@ struct std::formatter<TokenType> {
                 rb->entries.push_back(std::move(entry));
                 continue;
             }
-            if (match(TokenType::K_type)) {
-                if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected name after 'type'", peekToken().line, peekToken().col});
+            if (check(TokenType::K_type) and peekToken(1).type != TokenType::Op_Colon) {
+                consume(TokenType::K_type, "Type is not type??? wtf???");
+
+                if (not check(TokenType::Name)) {
+                    pushError("expected name after 'type'");
                 } else {
                     entry.typeName = peekToken().text;
                     _pos++;
@@ -1234,8 +1245,8 @@ struct std::formatter<TokenType> {
                 continue;
             }
             if (match(TokenType::K_record)) {
-                if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected name after 'record'", peekToken().line, peekToken().col});
+                if (not check(TokenType::Name)) {
+                    pushError(std::format("expected name after 'record', got {}", peekToken()));
                 } else {
                     entry.nestedName = peekToken().text;
                     _pos++;
@@ -1247,7 +1258,7 @@ struct std::formatter<TokenType> {
             }
             if (match(TokenType::K_enum)) {
                 if (!check(TokenType::Name)) {
-                    _errors.push_back({"expected name after 'enum'", peekToken().line, peekToken().col});
+                    pushError("expected name after 'enum'");
                 } else {
                     entry.nestedName = peekToken().text;
                     _pos++;
@@ -1256,6 +1267,18 @@ struct std::formatter<TokenType> {
                 entry.kind = RecordBody::Entry::Kind::Enum;
                 rb->entries.push_back(std::move(entry));
                 continue;
+            }
+            if (match(TokenType::K_interface)) {
+                if (not check(TokenType::Name)) {
+                    pushError(std::format("expected name after 'interface', got {}", peekToken()));
+                } else {
+                    entry.nestedName = peekToken().text;
+                    _pos++;
+                }
+
+                entry.nestedBody = parseRecordBody();
+                entry.kind = RecordBody::Entry::Kind::Interface;
+                rb->entries.push_back(std::move(entry));
             }
             bool isMeta = false;
             if (check(TokenType::Name) and peekToken().text == "metamethod") {
@@ -1266,8 +1289,8 @@ struct std::formatter<TokenType> {
                 entry.fieldName = peekToken().text;
                 _pos++;
             } else if (match(TokenType::Op_LBracket)) {
-                if (!check(TokenType::String)) {
-                    _errors.push_back({"expected literal string key in record field", peekToken().line, peekToken().col});
+                if (not check(TokenType::String)) {
+                    pushError("expected literal string key in record field");
                 } else {
                     entry.fieldKeyLiteral = peekToken().text;
                     _pos++;
@@ -1275,7 +1298,7 @@ struct std::formatter<TokenType> {
                 consume(TokenType::Op_RBracket, "expected ']'");
             } else {
                 if (check(TokenType::K_end) or isAtEnd()) break;
-                _errors.push_back({"unexpected token in record body", peekToken().line, peekToken().col});
+                pushError(std::format("unexpected token `{}` in record body", peekToken()));
                 _pos++;
                 continue;
             }
@@ -1301,7 +1324,7 @@ struct std::formatter<TokenType> {
             } else if (check(TokenType::K_end)) {
                 break;
             } else {
-                _errors.push_back({"expected string in enum", peekToken().line, peekToken().col});
+                pushError("expected string in enum");
                 _pos++;
             }
         }
@@ -1320,7 +1343,7 @@ struct std::formatter<TokenType> {
                     auto nom = parseNominalType();
                     if (nom) rb.interfaceExt.push_back(std::move(nom));
                     else {
-                        _errors.push_back({"expected interface name", peekToken().line, peekToken().col});
+                        pushError("expected interface name");
                         break;
                     }
                 } while (match(TokenType::Op_Comma));
@@ -1328,12 +1351,12 @@ struct std::formatter<TokenType> {
         } else {
             auto nom = parseNominalType();
             if (nom) rb.interfaceExt.push_back(std::move(nom));
-            else _errors.push_back({"expected interface name", peekToken().line, peekToken().col});
+            else pushError("expected interface name");
             while (match(TokenType::Op_Comma)) {
                 auto nom2 = parseNominalType();
                 if (nom2) rb.interfaceExt.push_back(std::move(nom2));
                 else {
-                    _errors.push_back({"expected interface name", peekToken().line, peekToken().col});
+                    pushError("expected interface name");
                     break;
                 }
             }

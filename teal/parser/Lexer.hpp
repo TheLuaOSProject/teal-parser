@@ -178,156 +178,154 @@ namespace teal
 
         };
 
+        struct TooManyErrors {
+            size_t errorCount;
+        };
+
         struct Error : public teal::Error <
             InvalidCharacter,
             InvalidLongStringDelimiter,
             UnterminatedLongComment,
             UnterminatedStringLiteral,
             UnterminatedLongStringLiteral,
-            Overflow
+            Overflow,
+            TooManyErrors
         > {
             int line, column;
         
-            constexpr inline std::string_view toString() const {
+            constexpr inline std::string toString() const {
                 switch (kind.index()) {
-                    case 0: return "Invalid character";
+                    case 0: return std::format("Invalid character '{}'", std::get<InvalidCharacter>(kind).character);
                     case 1: return "Invalid long string delimiter";
                     case 2: return "Unterminated long ocmment";
                     case 3: return "Unterminated string literal";
                     case 4: return "Unterminated long string literal";
                     case 5: return "Overflow";
+                    case 6: return std::format("Too many errors ({})", std::get<TooManyErrors>(kind).errorCount);
                     default: return "Unknown";
                 };
             };
         };
 
         Lexer(const std::string &source)
-            : src(source), length(source.size()), pos(0), line(1), col(1) {}
+            : maxErrors(10), _src(source), _length(source.size()), _pos(0), _line(1), _col(1), _tokens(), _errors() {}
         std::pair<std::vector<Token>, std::vector<Error>> tokenize();
         std::expected<Token, Error> lex();
 
+        const size_t maxErrors;
+
     private:
-        std::string src;
-        size_t length;
-        size_t pos;
-        int line;
-        int col;
-        std::vector<Token> tokens;
-        std::vector<Error> errors;
+        std::string _src;
+        size_t _length, _pos;
+        int _line, _col;
+        std::vector<Token> _tokens;
+        std::vector<Error> _errors;
 
         [[gnu::const]]
         constexpr inline Error makeError(Error::Kind_t err) const
-        { return { {err}, line, col }; }
+        { return { {err}, _line, _col }; }
 
-        inline void pushError(Error::Kind_t err)
-        {
-            errors.push_back(makeError(err));
-        }
+        constexpr inline void pushError(Error::Kind_t err)
+        { _errors.push_back(makeError(err)); }
 
         [[gnu::pure]]
-        inline char peekChar(int lookAhead = 0) const {
-            return (pos+lookAhead < length and pos+lookAhead >= 0 ? src[pos+lookAhead] : '\0');
+        inline char peek(int lookAhead = 0) const {
+            return (_pos+lookAhead < _length and _pos+lookAhead >= 0 ? _src[_pos+lookAhead] : '\0');
         }
 
         [[gnu::pure]]
         inline std::optional<std::reference_wrapper<Token>> previousToken(int lookBehind = 1) {
-            int idx = tokens.size() - lookBehind;
-            if (idx < 0 or size_t(idx) > tokens.size()) return std::nullopt;
-            return tokens[idx];
+            int idx = _tokens.size() - lookBehind;
+            if (idx < 0 or size_t(idx) > _tokens.size()) return std::nullopt;
+            return _tokens[idx];
         }
-        char getChar() {
-            if (pos >= length) return '\0';
-            char c = src[pos++];
+        char consume() {
+            if (_pos >= _length) return '\0';
+            char c = _src[_pos++];
             if (c == '\r' or c == '\n') {  // handle newlines uniformly
-                if (c == '\r' and pos < length and src[pos] == '\n') pos++;
-                line++;
-                col = 1;
+                if (c == '\r' and _pos < _length and _src[_pos] == '\n') _pos++;
+                _line++;
+                _col = 1;
             } else {
-                col++;
+                _col++;
             }
             return c;
         }
         void skipWhitespace() {
             while (true) {
-                char c = peekChar();
+                char c = peek();
                 if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
-                    getChar();
+                    consume();
                 } else {
                     break;
                 }
             }
         }
-        void skipComment() {
-            if (peekChar() == '-') {
-                size_t startPos = pos;
-                getChar();
-                if (peekChar() == '-') {
-                    getChar();
-                    // Long comment check
-                    if (peekChar() == '[') {
-                        getChar();
-                        int eqCount = 0;
-                        while (peekChar() == '=') { getChar(); eqCount++; }
-                        if (peekChar() == '[') {
-                            getChar();
-                            std::string endMarker = "]";
-                            endMarker.append(eqCount, '=');
-                            endMarker.push_back(']');
-                            size_t endIndex = src.find(endMarker, pos);
-                            if (endIndex == std::string::npos) {
-                                pushError(UnterminatedLongComment());
-                                pos = length;
+        bool skipComment() {
+            if (not (peek() == '-' and peek(1) == '-'))
+                return false;
+
+            consume(), consume();
+            // Long comment check
+            if (peek() == '[') {
+                consume();
+                int eqCount = 0;
+                while (peek() == '=') { consume(); eqCount++; }
+                if (peek() == '[') {
+                    consume();
+                    std::string endMarker = "]";
+                    endMarker.append(eqCount, '=');
+                    endMarker.push_back(']');
+                    size_t endIndex = _src.find(endMarker, _pos);
+                    if (endIndex == std::string::npos) {
+                        pushError(UnterminatedLongComment());
+                        _pos = _length;
+                    } else {
+                        // Skip everything up to end of long comment
+                        for (size_t i = _pos; i < endIndex; ++i) {
+                            if (_src[i] == '\r' or _src[i] == '\n') {
+                                if (_src[i] == '\r' and i+1 < endIndex and _src[i+1] == '\n') i++;
+                                _line++;
+                                _col = 1;
                             } else {
-                                // Skip everything up to end of long comment
-                                for (size_t i = pos; i < endIndex; ++i) {
-                                    if (src[i] == '\r' or src[i] == '\n') {
-                                        if (src[i] == '\r' and i+1 < endIndex and src[i+1] == '\n') i++;
-                                        line++;
-                                        col = 1;
-                                    } else {
-                                        col++;
-                                    }
-                                }
-                                pos = endIndex + endMarker.size();
-                                col += endMarker.size();
+                                _col++;
                             }
-                            return;
                         }
-                        // If not a valid "[==[", treat as normal comment after "--["
+                        _pos = endIndex + endMarker.size();
+                        _col += endMarker.size();
                     }
-                    // Single-line comment (consume until newline)
-                    while (pos < length and src[pos] != '\n' and src[pos] != '\r') {
-                        pos++;
-                        col++;
-                    }
-                    return;
+                    return true;
                 }
-                // If second char wasn't '-', rollback (this '-' might be an operator)
-                pos = startPos;
-                col--;
+                // If not a valid "[==[", treat as normal comment after "--["
             }
+            // Single-line comment (consume until newline)
+            int curLn = _line;
+            while (curLn == _line) {
+                consume();
+            }
+            return true;
         }
 
         Token readString() {
-            int startLine = line;
-            int startCol = col;
+            int startLine = _line;
+            int startCol = _col;
             std::string str;
-            char startChar = getChar();  // read opening delimiter
+            char startChar = consume();  // read opening delimiter
 
             // Check if this is a long string literal (multiline)
-            if (startChar == '[' and (peekChar() == '[' or peekChar() == '=')) {
+            if (startChar == '[' and (peek() == '[' or peek() == '=')) {
                 int eqCount = 0;
-                while (peekChar() == '=') {
-                    getChar();
+                while (peek() == '=') {
+                    consume();
                     eqCount++;
                 }
-                if (peekChar() != '[') {
+                if (peek() != '[') {
                     // Not a valid long string delimiter, so report an error.
-                    pushError(InvalidLongStringDelimiter());
-                    return {TokenType::String, "", startLine, startCol};
+                    pushError(InvalidLongStringDelimiter {});
+                    return Token {TokenType::String, "", startLine, startCol};
                 }
                 // Consume the final '[' that starts the long string content.
-                getChar();
+                consume();
 
                 // Build the closing delimiter: a ']' followed by the same number of '=' and a final ']'
                 std::string endMarker = "]";
@@ -335,28 +333,28 @@ namespace teal
                 endMarker.push_back(']');
 
                 // Look for the end marker in the source
-                size_t endIndex = src.find(endMarker, pos);
+                size_t endIndex = _src.find(endMarker, _pos);
                 if (endIndex == std::string::npos) {
                     pushError(UnterminatedLongStringLiteral());
-                    pos = length;
+                    _pos = _length;
                     return {TokenType::String, str, startLine, startCol};
                 } else {
                     // Consume the content until the end marker, updating line and col counts.
-                    for (size_t i = pos; i < endIndex; ++i) {
-                        char c = src[i];
+                    for (size_t i = _pos; i < endIndex; ++i) {
+                        char c = _src[i];
                         str.push_back(c);
                         if (c == '\r' or c == '\n') {
-                            if (c == '\r' and i+1 < endIndex and src[i+1] == '\n') {
+                            if (c == '\r' and i+1 < endIndex and _src[i+1] == '\n') {
                                 i++;  // handle CRLF as a single newline
                             }
-                            line++;
-                            col = 1;
+                            _line++;
+                            _col = 1;
                         } else {
-                            col++;
+                            _col++;
                         }
                     }
-                    pos = endIndex + endMarker.size();
-                    col += endMarker.size();
+                    _pos = endIndex + endMarker.size();
+                    _col += endMarker.size();
                     return {TokenType::String, str, startLine, startCol};
                 }
             }
@@ -364,16 +362,16 @@ namespace teal
             // Otherwise, treat as a regular (short) string literal (using ' or " as delimiters)
             char delim = startChar;
             bool closed = false;
-            while (pos < length) {
-                char c = getChar();
+            while (_pos < _length) {
+                char c = consume();
                 if (c == '\0') break;
                 if (c == delim) {
                     closed = true;
                     break;
                 }
                 if (c == '\\') {  // handle escape sequences
-                    if (pos < length) {
-                        char next = getChar();
+                    if (_pos < _length) {
+                        char next = consume();
                         switch (next) {
                             case 'n':  str.push_back('\n'); break;
                             case 'r':  str.push_back('\r'); break;
@@ -399,29 +397,29 @@ namespace teal
 
 
         Token readNumber() {
-            int startLine = line;
-            int startCol = col;
+            int startLine = _line;
+            int startCol = _col;
             std::string numStr;
             bool isHex = false;
-            if (peekChar() == '0') {
-                numStr.push_back(getChar());
-                if (peekChar() == 'x' or peekChar() == 'X') {
+            if (peek() == '0') {
+                numStr.push_back(consume());
+                if (peek() == 'x' or peek() == 'X') {
                     isHex = true;
-                    numStr.push_back(getChar());
+                    numStr.push_back(consume());
                 }
             }
             bool seenDecimal = false;
-            while (pos < length) {
-                char c = peekChar();
+            while (_pos < _length) {
+                char c = peek();
                 if (isHex) {
                     if (std::isxdigit(c) or c == '.') {
                         if (c == '.' and seenDecimal) break;
                         if (c == '.') seenDecimal = true;
-                        numStr.push_back(getChar());
+                        numStr.push_back(consume());
                     } else if (c == 'p' or c == 'P') {  // exponent in hex
-                        numStr.push_back(getChar());
-                        if (peekChar() == '+' or peekChar() == '-') {
-                            numStr.push_back(getChar());
+                        numStr.push_back(consume());
+                        if (peek() == '+' or peek() == '-') {
+                            numStr.push_back(consume());
                         }
                     } else {
                         break;
@@ -430,11 +428,11 @@ namespace teal
                     if (std::isdigit(c) or c == '.') {
                         if (c == '.' and seenDecimal) break;
                         if (c == '.') seenDecimal = true;
-                        numStr.push_back(getChar());
+                        numStr.push_back(consume());
                     } else if (c == 'e' or c == 'E') {  // decimal exponent
-                        numStr.push_back(getChar());
-                        if (peekChar() == '+' or peekChar() == '-') {
-                            numStr.push_back(getChar());
+                        numStr.push_back(consume());
+                        if (peek() == '+' or peek() == '-') {
+                            numStr.push_back(consume());
                         }
                     } else {
                         break;
@@ -448,27 +446,27 @@ namespace teal
         bool matchEndMarker(const std::string &endMarker) {
             // Compare substring from src[pos..pos + endMarker.size()-1]
             // without consuming if it doesn't match
-            if (pos + endMarker.size() > length) {
+            if (_pos + endMarker.size() > _length) {
                 return false;
             }
             for (size_t i = 0; i < endMarker.size(); i++) {
-                if (src[pos + i] != endMarker[i]) {
+                if (_src[_pos + i] != endMarker[i]) {
                     return false;
                 }
             }
             // If matched, consume them
             for (size_t i = 0; i < endMarker.size(); i++) {
-                getChar(); // this updates line/col properly
+                consume(); // this updates line/col properly
             }
             return true;
         }
         Token  readName() {
-            int startLine = line;
-            int startCol = col;
+            int startLine = _line;
+            int startCol = _col;
             std::string name;
-            name.push_back(getChar());
-            while (std::isalnum(peekChar()) or peekChar() == '_') {
-                name.push_back(getChar());
+            name.push_back(consume());
+            while (std::isalnum(peek()) or peek() == '_') {
+                name.push_back(consume());
             }
             static const std::unordered_map<std::string, TokenType> keywords = {
                 {"nil", TokenType::K_nil}, {"true", TokenType::K_true}, {"false", TokenType::K_false},

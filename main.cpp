@@ -24,6 +24,11 @@ constexpr const char BIG[] = {
     , 0
 };
 
+constexpr const char BIGGER[] = {
+#   embed "tl.tl"
+    , 0
+};
+
 constexpr std::string_view TEST_CASES[] = {
     R"(
 local function filename_to_module_name(filename)
@@ -136,10 +141,35 @@ print(teal_parser)
     )",
 
     R"(
-if type(4) == "number" then print "ok" end
+if type "4" as string is number then print "ok" end
     )",
 
-    BIG
+    R"(
+local a: function()
+    )",
+
+    R"(
+        local type a = function(integer, integer): integer
+    )",
+
+    R"(
+local a: function(...: any): any...
+    )",
+
+    R"(
+local record R
+    a: integer
+end
+    )",
+
+    R"(
+local record R
+    type: Type
+end
+    )",
+
+    BIG,
+    BIGGER
 };
 
 int main() {
@@ -149,7 +179,7 @@ int main() {
     int retval = EXIT_SUCCESS;
     int i = 0;
     auto stopwatch = Stopwatch<>();
-    for (const auto &test : TEST_CASES | std::views::drop(8)) {
+    for (const auto &test : TEST_CASES | std::views::drop(10)) {
         std::cout << std::format("Test case {}\n", i++);
         stopwatch.reset();
         auto [tokens, lexErrors] = teal::Lexer(std::string(test)).tokenize();
@@ -159,7 +189,7 @@ int main() {
         if (not lexErrors.empty()) {
             std::cerr << "  Errors encountered during lexing:\n";
             for (auto &err : lexErrors) {
-                std::cerr << std::format("    [tl.lua:{}:{}] {}", err.line, err.column, err.toString()) << std::endl;
+                std::cerr << std::format("    [tl.tl:{}:{}] {}", err.line, err.column, err.toString()) << std::endl;
             }
 
             continue;
@@ -167,14 +197,14 @@ int main() {
 
         // Syntax parsing
         auto parser = teal::Parser(tokens);
-        std::unique_ptr<teal::Block> ast = parser.parseChunk();
+        std::unique_ptr<teal::Block> ast = parser.parse();
         std::cout << std::format("  Parsing took {}\n", std::chrono::duration_cast<std::chrono::milliseconds>(stopwatch.elapsed()));
 
-        if (not parser.errors().empty()) {
+        if (ast == nullptr or not parser.errors().empty()) {
             retval = EXIT_FAILURE;
             std::cerr << "  Errors encountered during parsing:\n";
             for (auto &err : parser.errors()) {
-                std::cerr << std::format("    [tl.lua:{}:{}] {}", err.line, err.col, err.message) << std::endl;
+                std::cerr << std::format("    [tl.tl:{}:{}] {}", err.line, err.col, err.message) << std::endl;
                 // std::cerr << "Line " << err.line << ", Col " << err.col
                 //           << ": " << err.message << std::endl;
             }
