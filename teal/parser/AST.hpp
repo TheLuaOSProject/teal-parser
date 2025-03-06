@@ -75,9 +75,14 @@ namespace teal
         std::vector<std::unique_ptr<Statement>> statements;
     };
 
+    struct GenericTypeParameter {
+        std::string name;
+        std::optional<std::string> is;
+    };
+
     // Function body for function definitions (parameters and return types)
     struct FunctionBody : ASTNode {
-        std::vector<std::string> typeParams;
+        std::vector<GenericTypeParameter> typeParams;
         struct Param {
             std::string name;
             bool isVarArg;
@@ -135,7 +140,7 @@ namespace teal
         TableTypeNode() : isMap(false) {}
     };
     struct FunctionTypeNode : TypeNode {
-        std::vector<std::string> typeParams;
+        std::vector<GenericTypeParameter> typeParams;
         struct ParamType {
             std::optional<std::string> name;
             bool isOptional;
@@ -247,7 +252,7 @@ namespace teal
             std::unique_ptr<TypeNode> typeValue;
             std::string nestedName;
             std::unique_ptr<ASTNode> nestedBody;
-            Entry() : isMetamethod(false) {}
+            // Entry() : isMetamethod(false) {}
         };
         std::vector<Entry> entries;
     };

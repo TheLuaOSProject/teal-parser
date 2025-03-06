@@ -1,115 +1,117 @@
 #pragma once
 
+#include <source_location>
 #include "AST.hpp"
 
-namespace teal
-{
+namespace teal {
 
-    class Parser {
-    public:
-        struct Error {
-            std::string message;
-            int line, col;
-        };
-
-        Parser(std::vector<Token> toks) : maxErrors(10), _tokens(std::move(toks)), _pos(0) {}
-        const std::vector<Error> &errors() const { return _errors; }
-        std::unique_ptr<Block> parse()
-        {
-            try {
-                return parseChunk();
-            } catch (const StopParsingException &) {
-                pushError(std::format("Too many parsing errors ({})", _errors.size()), true);
-                return nullptr;
-            };
-        }
-
-        const size_t maxErrors;
-    private:
-        class StopParsingException : std::exception {};
-
-        std::vector<Token> _tokens;
-        size_t _pos;
-        std::vector<Error> _errors;
-        // Helper functions to inspect and consume tokens
-        const Token &peekToken(int forward = 0) const { return _tokens[_pos+forward]; }
-        bool isAtEnd() const { return peekToken().type == TokenType::EndOfFile; }
-        bool check(TokenType t) const {
-            return (t == TokenType::Name and Token::typeIsTealKeyword(peekToken().type)) or peekToken().type == t;
-        }
-        bool match(TokenType t) { if (check(t)) { _pos++; return true; } return false; }
-        bool matchAny(std::initializer_list<TokenType> types) {
-            if (check(TokenType::EndOfFile)) return false;
-            for (TokenType t : types) {
-                if (check(t)) { _pos++; return true; }
-            }
-            return false;
-        }
-        constexpr inline void pushError(const std::string_view &msg, bool nothrow = false)
-        {
-            _errors.push_back({ std::string((msg)), peekToken().line, peekToken().col });
-            if (_errors.size() >= maxErrors and not nothrow)
-                throw StopParsingException {};
-        }
-        std::optional<Token> consume(TokenType t, const std::string_view &errMsg) {
-            if (check(t)) {
-                Token tok = peekToken();
-                _pos++;
-                return tok;
-            } else {
-                pushError(errMsg);
-                return std::nullopt;
-            }
-        }
-        void skipToNextStatement() {
-            while (!isAtEnd()) {
-                TokenType t = peekToken().type;
-                if (t == TokenType::Op_Semicolon or t == TokenType::K_return or t == TokenType::K_break or
-                    t == TokenType::K_global or t == TokenType::K_local or t == TokenType::K_if or t == TokenType::K_while or
-                    t == TokenType::K_for or t == TokenType::K_function or t == TokenType::K_repeat or
-                    t == TokenType::K_end or t == TokenType::K_until or t == TokenType::K_else or t == TokenType::K_elseif) {
-                    return;  // stop at a likely statement boundary or block terminator
-                }
-                _pos++;
-            }
-        }
-        // Recursive descent parsing functions
-        std::unique_ptr<Block> parseChunk();
-        std::unique_ptr<Statement> parseStat();
-        std::unique_ptr<Statement> parseAssignmentOrCall();
-        std::unique_ptr<Statement> parseLabel();
-        std::unique_ptr<Statement> parseIf();
-        std::unique_ptr<Statement> parseWhile();
-        std::unique_ptr<Statement> parseRepeat();
-        std::unique_ptr<Statement> parseFor();
-        std::unique_ptr<Statement> parseDo();
-        std::unique_ptr<Statement> parseFunctionDecl(bool isLocal, bool isGlobal);
-        std::unique_ptr<Statement> parseVarDecl(bool isLocal, bool isGlobal);
-        std::unique_ptr<Statement> parseRecordDecl(bool isLocal, bool isGlobal, bool isInterface);
-        std::unique_ptr<Statement> parseEnumDecl(bool isLocal, bool isGlobal);
-        std::unique_ptr<Statement> parseTypeAliasDecl(bool isLocal, bool isGlobal);
-        std::vector<VariableDeclarationStatement::NameAttrib> parseAttNameList();
-        std::vector<std::string> parseNameList();
-        std::unique_ptr<Expression> parseExpression();
-        std::vector<std::unique_ptr<Expression>> parseExpressionList();
-        std::unique_ptr<Expression> parsePrefixExpression();
-        std::unique_ptr<Expression> parseVarExpression();
-        std::unique_ptr<Expression> parsePrimaryExpression();
-        std::unique_ptr<Expression> parseExpRec(int minPrec);
-        int getBinaryPrecedence(TokenType op);
-        bool isRightAssociative(TokenType op);
-        std::unique_ptr<Expression> parseUnaryExpression();
-        std::unique_ptr<Expression> parseFunctionDefExpression();
-        std::unique_ptr<Expression> parseTableConstructor();
-        std::unique_ptr<TypeNode> parseType();
-        std::unique_ptr<TypeNode> parseBaseType();
-        std::unique_ptr<TypeNode> parseNominalType();
-        std::unique_ptr<TypeNode> parseFunctionType();
-        std::vector<std::unique_ptr<TypeNode>> parseTypeList();
-        std::vector<FunctionTypeNode::ParamType> parseParamTypeList();
-        std::vector<std::unique_ptr<TypeNode>> parseReturnTypeList(bool &varArg);
-        std::unique_ptr<RecordBody> parseRecordBody();
-        std::unique_ptr<EnumBody> parseEnumBody();
-        void parseInterfaceList(RecordBody &rb);
+class Parser {
+public:
+    struct Error {
+        std::string message;
+        int line, col;
     };
+
+    Parser(std::vector<Token> toks) : max_errors(10), tokens_(std::move(toks)), pos_(0) {}
+    const std::vector<Error>& errors() const { return errors_; }
+    std::unique_ptr<Block> parse() {
+        try {
+            return parse_chunk();
+        } catch (const StopParsingException&) {
+            push_error(std::format("Too many parsing errors ({})", errors_.size()), true);
+            return nullptr;
+        }
+    }
+
+    const size_t max_errors;
+private:
+    class StopParsingException : public std::exception {};
+
+    std::vector<Token> tokens_;
+    size_t pos_;
+    std::vector<Error> errors_;
+
+    const Token& peek_token(int forward = 0) const { return tokens_[pos_ + forward]; }
+    bool is_at_end() const { return peek_token().type == TokenType::END_OF_FILE; }
+    bool check(TokenType t) const {
+        return (t == TokenType::NAME and (Token::type_is_teal_keyword(peek_token().type) or peek_token().text == "macroexp"))
+            or peek_token().type == t;
+    }
+    bool match(TokenType t) { if (check(t)) { pos_++; return true; } return false; }
+    bool match_any(std::initializer_list<TokenType> types) {
+        if (check(TokenType::END_OF_FILE)) return false;
+        for (TokenType t : types) {
+            if (check(t)) { pos_++; return true; }
+        }
+        return false;
+    }
+    constexpr inline void push_error(const std::string_view& msg, bool nothrow = false) {
+        errors_.push_back({ std::string(msg), peek_token().line, peek_token().col });
+        if (errors_.size() >= max_errors and not nothrow)
+            throw StopParsingException{};
+    }
+#define push_error_macro(msg, ...) push_error(std::format("<{}:{}> {}", std::source_location::current().file_name(), std::source_location::current().line(), msg) __VA_OPT__(,) __VA_ARGS__)
+    std::optional<Token> consume(TokenType t, const std::string_view& err_msg) {
+        if (check(t)) {
+            Token tok = peek_token();
+            pos_++;
+            return tok;
+        } else {
+            push_error(err_msg);
+            return std::nullopt;
+        }
+    }
+#define consume_macro(tk, msg) consume(tk, std::format("<{}:{}> {}", std::source_location::current().file_name(), std::source_location::current().line(), msg))
+    void skip_to_next_statement() {
+        while (not is_at_end()) {
+            TokenType t = peek_token().type;
+            if (t == TokenType::OP_SEMICOLON or t == TokenType::K_RETURN or t == TokenType::K_BREAK or
+                t == TokenType::K_GLOBAL or t == TokenType::K_LOCAL or t == TokenType::K_IF or t == TokenType::K_WHILE or
+                t == TokenType::K_FOR or t == TokenType::K_FUNCTION or t == TokenType::K_REPEAT or
+                t == TokenType::K_END or t == TokenType::K_UNTIL or t == TokenType::K_ELSE or t == TokenType::K_ELSEIF)
+                return;
+            pos_++;
+        }
+    }
+
+    std::unique_ptr<Block> parse_chunk();
+    std::unique_ptr<Statement> parse_stat();
+    std::unique_ptr<Statement> parse_assignment_or_call();
+    std::unique_ptr<Statement> parse_label();
+    std::unique_ptr<Statement> parse_if();
+    std::unique_ptr<Statement> parse_while();
+    std::unique_ptr<Statement> parse_repeat();
+    std::unique_ptr<Statement> parse_for();
+    std::unique_ptr<Statement> parse_do();
+    std::unique_ptr<Statement> parse_function_decl(bool is_local, bool is_global);
+    std::unique_ptr<Statement> parse_var_decl(bool is_local, bool is_global);
+    std::unique_ptr<Statement> parse_record_decl(bool is_local, bool is_global, bool is_interface);
+    std::unique_ptr<Statement> parse_enum_decl(bool is_local, bool is_global);
+    std::unique_ptr<Statement> parse_type_alias_decl(bool is_local, bool is_global);
+    std::vector<VariableDeclarationStatement::NameAttrib> parse_att_name_list();
+    std::vector<std::string> parse_name_list();
+    std::unique_ptr<Expression> parse_expression();
+    std::vector<std::unique_ptr<Expression>> parse_expression_list();
+    std::unique_ptr<Expression> parse_prefix_expression();
+    std::unique_ptr<Expression> parse_var_expression();
+    std::unique_ptr<Expression> parse_primary_expression();
+    std::unique_ptr<Expression> parse_exp_rec(int min_prec);
+    int get_binary_precedence(TokenType op);
+    bool is_right_associative(TokenType op);
+    std::unique_ptr<Expression> parse_unary_expression();
+    std::unique_ptr<Expression> parse_function_def_expression();
+    std::unique_ptr<Expression> parse_table_constructor();
+    std::unique_ptr<TypeNode> parse_type();
+    std::unique_ptr<TypeNode> parse_base_type();
+    std::unique_ptr<TypeNode> parse_nominal_type();
+    std::unique_ptr<TypeNode> parse_function_type();
+    std::vector<std::unique_ptr<TypeNode>> parse_type_list();
+    std::vector<FunctionTypeNode::ParamType> parse_param_type_list();
+    std::vector<std::unique_ptr<TypeNode>> parse_return_type_list(bool &var_arg);
+    std::unique_ptr<RecordBody> parse_record_body();
+    std::unique_ptr<EnumBody> parse_enum_body();
+    void parse_interface_list(RecordBody &rb);
+    bool parse_generic_list(std::vector<GenericTypeParameter> &t_params);
 };
+
+}

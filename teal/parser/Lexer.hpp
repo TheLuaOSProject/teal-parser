@@ -30,7 +30,7 @@ namespace teal
         Op_VarArg, Op_Question,
 
         //Teal keywords, these can be used as identifiers
-        K_global, K_record, K_interface, K_enum, K_type, K_where, K_as, K_is
+        K_global, K_record, K_interface, K_enum, K_type, K_where, K_as, K_is, K_macroexp
     };
 
     struct Token {
@@ -70,19 +70,20 @@ namespace teal
                 $check(record);
                 $check(interface);
                 $check(enum);
+                $check(macroexp);
             #undef $check
             default:
                 return std::nullopt;
             }
         }
 
-        constexpr std::string toString() const
+        static constexpr std::string typeToString(TokenType type)
         {
             switch (type) {
                 case TokenType::EndOfFile: return "EOF";
-                case TokenType::Name: return "Name("+text+")";
-                case TokenType::Number: return "Number("+text+")";
-                case TokenType::String: return "String(\"" + text + "\")";
+                case TokenType::Name: return "Name";
+                case TokenType::Number: return "Number";
+                case TokenType::String: return "String";
                 case TokenType::K_nil: return "nil";
                 case TokenType::K_true: return "true";
                 case TokenType::K_false: return "false";
@@ -113,6 +114,7 @@ namespace teal
                 case TokenType::K_not: return "not";
                 case TokenType::K_as: return "as";
                 case TokenType::K_is: return "is";
+                case TokenType::K_macroexp: return "macroexp";
                 case TokenType::Op_Assign: return "=";
                 case TokenType::Op_Equals: return "==";
                 case TokenType::Op_NotEq: return "~=";
@@ -147,6 +149,17 @@ namespace teal
                 case TokenType::Op_Dot: return ".";
                 case TokenType::Op_VarArg: return "...";
                 case TokenType::Op_Question: return "?";
+                default: return "Unknown";
+            }
+        }
+
+        constexpr std::string toString() const
+        {
+            switch (type) {
+                case TokenType::Name: return "Name("+text+")";
+                case TokenType::Number: return "Number("+text+")";
+                case TokenType::String: return "String(\"" + text + "\")";
+                default: return typeToString(type);
                 // default: return "Unknown";
             }
         }
@@ -192,7 +205,7 @@ namespace teal
             TooManyErrors
         > {
             int line, column;
-        
+
             constexpr inline std::string toString() const {
                 switch (kind.index()) {
                     case 0: return std::format("Invalid character '{}'", std::get<InvalidCharacter>(kind).character);
@@ -480,29 +493,31 @@ namespace teal
                 // {"require", TokenType::K_require},
                 {"where", TokenType::K_where},
                 {"and", TokenType::K_and}, {"or", TokenType::K_or}, {"not", TokenType::K_not},
-                {"as", TokenType::K_as}, {"is", TokenType::K_is}
+                {"as", TokenType::K_as}, {"is", TokenType::K_is},
+                // {"macroexp", TokenType::K_macroexp}
+                {"macroexp", TokenType::K_function} //for now we will keep macroexps as functions
             };
             auto it = keywords.find(name);
             if (it != keywords.end()) {
                 //the teal keywords need special handling because they can also be `Name`s
-                auto tk = it->second;
+                // auto tk = it->second;
 
-                if (Token::typeIsTealKeyword(tk)) {
-                    switch (tk) {
-                    // case TokenType::K_global...TokenType::K_is:
+                // if (Token::typeIsTealKeyword(tk)) {
+                //     switch (tk) {
+                //     // case TokenType::K_global...TokenType::K_is:
 
-                    //No clue how I am gonna properly lex this,
-                    //`global a = 4` is valid, `global` should be a `TokenType::K_global`
-                    //`a.global = 4` is also valid but `global` should be `TokenType::Name`
-                    case TokenType::K_global:
-                        if (auto prevTk = previousToken()) {
+                //     //No clue how I am gonna properly lex this,
+                //     //`global a = 4` is valid, `global` should be a `TokenType::K_global`
+                //     //`a.global = 4` is also valid but `global` should be `TokenType::Name`
+                //     case TokenType::K_global:
+                //         if (auto prevTk = previousToken()) {
 
-                        } /* else, its the global kw */
-                        break;
-                    default:
-                        __builtin_unreachable();
-                    };
-                }
+                //         } /* else, its the global kw */
+                //         break;
+                //     default:
+                //         __builtin_unreachable();
+                //     };
+                // }
 
                 return {it->second, name, startLine, startCol};
             }

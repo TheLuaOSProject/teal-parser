@@ -4,6 +4,7 @@
 #include <iostream>
 #include <chrono>
 #include <ranges>
+#include <functional>
 #include <cxxabi.h>
 
 #include "teal/parser/Parser.hpp"
@@ -168,6 +169,20 @@ local record R
 end
     )",
 
+    R"(
+local record MyRec
+    interface I
+    end
+
+    enum E
+        "one"
+        "two"
+        "three"
+        "ikuyo!"
+    end
+end
+    )",
+
     BIG,
     BIGGER
 };
@@ -179,7 +194,7 @@ int main() {
     int retval = EXIT_SUCCESS;
     int i = 0;
     auto stopwatch = Stopwatch<>();
-    for (const auto &test : TEST_CASES | std::views::drop(10)) {
+    for (const auto &test : TEST_CASES | std::views::drop(14)) {
         std::cout << std::format("Test case {}\n", i++);
         stopwatch.reset();
         auto [tokens, lexErrors] = teal::Lexer(std::string(test)).tokenize();
@@ -213,6 +228,9 @@ int main() {
         } else {
             std::cout << "  Parsing completed successfully.\n";
             std::cout << std::format("  {} statements found", ast->statements.size()) << std::endl;
+            auto ptr = ast->statements.at(0).get();
+            std::cout << std::format("    {} is the top decl", typeid(*ptr).name()) << std::endl;
+
             // Traverse AST: list top-level declarations
             // for (auto &stmt : ast->statements) {
             //     auto ptr = stmt.get();
