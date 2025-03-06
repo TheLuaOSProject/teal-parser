@@ -7,5 +7,4 @@
 /compile_commands
 /NewLexer.*
 t.tl
-compile_commands.json
 .vscode/launch.json
