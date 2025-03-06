@@ -259,6 +259,8 @@ void Lexer::Tests::mixed_tokens() {
 }
 
 void Lexer::Tests::unterminated_string() {
+
+#if not defined(NDEBUG)
     std::string input = "\"unterminated string";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -270,11 +272,14 @@ void Lexer::Tests::unterminated_string() {
             break;
         }
     }
+    (void)found_error;
     assert(found_error);
     std::cout << "testUnterminatedString passed.\n";
+#endif
 }
 
 void Lexer::Tests::invalid_long_string_delimiter() {
+#if not defined(NDEBUG)
     std::string input = "[=[Invalid long string";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -288,6 +293,7 @@ void Lexer::Tests::invalid_long_string_delimiter() {
     }
     assert(found_error);
     std::cout << "testInvalidLongStringDelimiter passed.\n";
+#endif
 }
 
 void Lexer::Tests::run_all()

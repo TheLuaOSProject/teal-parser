@@ -3888,7 +3888,7 @@ local function parse_where_clause(ps: ParseState, i: integer, def: RecordLikeTyp
    node.args = new_node(ps, i, "argument_list")
    node.args[1] = new_node(ps, i, "argument")
    node.args[1].tk = "self"
-   node.args[1].argtype = new_type(ps, i, "self")
+   node.args[1].argtype = new_type(ps, i, "self");
    (node.args[1].argtype as SelfType).display_type = def
    node.min_arity = 1
    node.rets = new_tuple(ps, i)
@@ -7569,7 +7569,7 @@ do
       end
 
       if t is FunctionType and t.is_method then
-         t = shallow_copy_new_type(t)
+         t = shallow_copy_new_type(t);
          (t as FunctionType).is_method = false
       end
       return t

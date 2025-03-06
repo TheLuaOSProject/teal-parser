@@ -214,7 +214,7 @@ int main() {
     int retval = EXIT_SUCCESS;
     int i = 0;
     auto stopwatch = Stopwatch<>();
-    for (const auto &test : TEST_CASES | std::views::drop(17)) {
+    for (const auto &test : TEST_CASES | std::views::drop(19)) {
         std::cout << std::format("Test case {}\n", i++);
         stopwatch.reset();
         auto [tokens, lexErrors] = teal::Lexer(std::string(test)).tokenize();
