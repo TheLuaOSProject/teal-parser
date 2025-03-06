@@ -183,18 +183,38 @@ local record MyRec
 end
     )",
 
+    R"(
+(node.args[1].argtype as SelfType).display_type = def
+    )",
+
+    R"(
+funcall {
+    key = "value",
+    [key] = "value",
+    "value",
+    self:get_value(),
+    key: type = "value",
+}
+    )",
+
+    R"(
+local record Rec
+   cbs: {K:V<A, B, C>}
+end
+    )",
+
     BIG,
     BIGGER
 };
 
 int main() {
     std::cout << "Started...\n";
-    teal::Lexer::Tests().runAll();
+    teal::Lexer::Tests().run_all();
 
     int retval = EXIT_SUCCESS;
     int i = 0;
     auto stopwatch = Stopwatch<>();
-    for (const auto &test : TEST_CASES | std::views::drop(14)) {
+    for (const auto &test : TEST_CASES | std::views::drop(17)) {
         std::cout << std::format("Test case {}\n", i++);
         stopwatch.reset();
         auto [tokens, lexErrors] = teal::Lexer(std::string(test)).tokenize();
@@ -204,7 +224,7 @@ int main() {
         if (not lexErrors.empty()) {
             std::cerr << "  Errors encountered during lexing:\n";
             for (auto &err : lexErrors) {
-                std::cerr << std::format("    [tl.tl:{}:{}] {}", err.line, err.column, err.toString()) << std::endl;
+                std::cerr << std::format("    [tl.tl:{}:{}] {}", err.line, err.column, err.to_string()) << std::endl;
             }
 
             continue;
@@ -219,7 +239,7 @@ int main() {
             retval = EXIT_FAILURE;
             std::cerr << "  Errors encountered during parsing:\n";
             for (auto &err : parser.errors()) {
-                std::cerr << std::format("    [tl.tl:{}:{}] {}", err.line, err.col, err.message) << std::endl;
+                std::cerr << std::format("    [tl.tl:{}:{}] {}", err.line, err.column, err.message) << std::endl;
                 // std::cerr << "Line " << err.line << ", Col " << err.col
                 //           << ": " << err.message << std::endl;
             }

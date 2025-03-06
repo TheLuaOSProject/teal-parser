@@ -5175,8 +5175,7 @@ function tl.generate(ast: tl.Node, gen_target: GenTarget, opts?: GenerateOptions
 
    opts = opts or default_generate_opts
 
-   local record Output
-      {string}
+   local record Output is {string}
       y: integer
       h: integer
    end
