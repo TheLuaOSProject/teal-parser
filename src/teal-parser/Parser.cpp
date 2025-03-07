@@ -4,7 +4,7 @@
 #include <format>
 #include <cassert>
 
-using namespace teal;
+using namespace teal::parser;
 
 template<>
 struct std::formatter<Token> {
@@ -23,7 +23,7 @@ struct std::formatter<TokenType> {
 };
 
 std::unique_ptr<Block> Parser::parse_chunk() {
-    auto block = std::make_unique<Block>();
+    auto block = make_node<Block>();
     while (not is_at_end()) {
         if (check(TokenType::END_OF_FILE)) break;
         auto stmt = parse_stat();
@@ -74,7 +74,7 @@ std::unique_ptr<Statement> Parser::parse_stat() {
 
     case TokenType::RETURN: {
         _pos++;
-        auto ret_stmt = std::make_unique<ReturnStatement>();
+        auto ret_stmt = make_node<ReturnStatement>();
         if (not check(TokenType::SEMICOLON) and not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not check(TokenType::UNTIL) and not check(TokenType::END_OF_FILE)) {
             ret_stmt->values = parse_expression_list();
         }
@@ -83,7 +83,7 @@ std::unique_ptr<Statement> Parser::parse_stat() {
     }
     case TokenType::BREAK:
         _pos++;
-        return std::make_unique<BreakStatement>();
+        return make_node<BreakStatement>();
     case TokenType::GOTO: {
         _pos++;
         if (not check(TokenType::NAME)) {
@@ -92,7 +92,7 @@ std::unique_ptr<Statement> Parser::parse_stat() {
         }
         std::string label_name = peek_token().text;
         _pos++;
-        return std::make_unique<GotoStatement>(label_name);
+        return make_node<GotoStatement>(label_name);
     }
     case TokenType::DOUBLE_COLON:
         return parse_label();
@@ -110,9 +110,9 @@ std::unique_ptr<Statement> Parser::parse_assignment_or_call() {
     if (check(TokenType::ASSIGN) or check(TokenType::COMMA)) {
         if (dynamic_cast<FunctionCallExpression*>(prefix.get())) {
             $push_error("cannot assign to function call");
-            prefix = std::make_unique<NameExpression>("_error_");
+            prefix = make_node<NameExpression>("_error_");
         }
-        auto assign = std::make_unique<AssignmentStatement>();
+        auto assign = make_node<AssignmentStatement>();
         assign->left.push_back(std::move(prefix));
         while (match(TokenType::COMMA)) {
             auto var = parse_var_expression();
@@ -137,7 +137,7 @@ std::unique_ptr<Statement> Parser::parse_assignment_or_call() {
             return nullptr;
         }
         std::unique_ptr<FunctionCallExpression> call_node(static_cast<FunctionCallExpression*>(prefix.release()));
-        return std::make_unique<CallStatement>(std::move(call_node));
+        return make_node<CallStatement>(std::move(call_node));
     }
 }
 
@@ -150,18 +150,18 @@ std::unique_ptr<Statement> Parser::parse_label() {
     std::string name = peek_token().text;
     _pos++;
     $consume(TokenType::DOUBLE_COLON, "expected '::' after label name");
-    return std::make_unique<LabelStatement>(name);
+    return make_node<LabelStatement>(name);
 }
 
 std::unique_ptr<Statement> Parser::parse_if() {
     $consume(TokenType::IF, "internal error: 'if' expected");
-    auto if_stmt = std::make_unique<IfStatement>();
+    auto if_stmt = make_node<IfStatement>();
     auto cond = parse_expression();
     if (not cond) {
         $push_error("expected condition after 'if'");
     }
     $consume(TokenType::THEN, "expected 'then' after condition");
-    auto then_block = std::make_unique<Block>();
+    auto then_block = make_node<Block>();
     while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not is_at_end()) {
         auto st = parse_stat();
         if (st) then_block->statements.push_back(std::move(st));
@@ -175,7 +175,7 @@ std::unique_ptr<Statement> Parser::parse_if() {
             $push_error("expected condition after 'elseif'");
         }
         $consume(TokenType::THEN, "expected 'then' after condition");
-        auto elseif_block = std::make_unique<Block>();
+        auto elseif_block = make_node<Block>();
         while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not is_at_end()) {
             auto st = parse_stat();
             if (st) elseif_block->statements.push_back(std::move(st));
@@ -185,7 +185,7 @@ std::unique_ptr<Statement> Parser::parse_if() {
         if_stmt->if_branches.push_back({ std::move(elseif_cond), std::move(elseif_block) });
     }
     if (match(TokenType::ELSE)) {
-        auto else_block = std::make_unique<Block>();
+        auto else_block = make_node<Block>();
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) else_block->statements.push_back(std::move(st));
@@ -200,13 +200,13 @@ std::unique_ptr<Statement> Parser::parse_if() {
 
 std::unique_ptr<Statement> Parser::parse_while() {
     $consume(TokenType::WHILE, "internal error: 'while' expected");
-    auto while_stmt = std::make_unique<WhileStatement>();
+    auto while_stmt = make_node<WhileStatement>();
     while_stmt->condition = parse_expression();
     if (not while_stmt->condition) {
         $push_error("expected condition after 'while'");
     }
     $consume(TokenType::DO, "expected 'do' after condition");
-    auto body_block = std::make_unique<Block>();
+    auto body_block = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
@@ -220,8 +220,8 @@ std::unique_ptr<Statement> Parser::parse_while() {
 
 std::unique_ptr<Statement> Parser::parse_repeat() {
     $consume(TokenType::REPEAT, "internal error: 'repeat' expected");
-    auto repeat_stmt = std::make_unique<RepeatStatement>();
-    auto body_block = std::make_unique<Block>();
+    auto repeat_stmt = make_node<RepeatStatement>();
+    auto body_block = make_node<Block>();
     while (not check(TokenType::UNTIL) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
@@ -247,7 +247,7 @@ std::unique_ptr<Statement> Parser::parse_for() {
     std::string var_name = peek_token().text;
     _pos++;
     if (match(TokenType::ASSIGN)) {
-        auto for_num = std::make_unique<ForNumericStatement>();
+        auto for_num = make_node<ForNumericStatement>();
         for_num->variable_name = var_name;
         for_num->expressions.start = parse_expression();
         $consume(TokenType::COMMA, "expected ',' after start value");
@@ -256,7 +256,7 @@ std::unique_ptr<Statement> Parser::parse_for() {
             for_num->expressions.step = parse_expression();
         }
         $consume(TokenType::DO, "expected 'do' in numeric for");
-        auto body_block = std::make_unique<Block>();
+        auto body_block = make_node<Block>();
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) body_block->statements.push_back(std::move(st));
@@ -280,7 +280,7 @@ std::unique_ptr<Statement> Parser::parse_for() {
         $consume(TokenType::IN, "expected 'in' in for loop");
         auto exprs = parse_expression_list();
         $consume(TokenType::DO, "expected 'do' in for loop");
-        auto body_block = std::make_unique<Block>();
+        auto body_block = make_node<Block>();
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) body_block->statements.push_back(std::move(st));
@@ -288,7 +288,7 @@ std::unique_ptr<Statement> Parser::parse_for() {
                 break;
         }
         $consume(TokenType::END, "expected 'end' to close 'for'");
-        auto for_in = std::make_unique<ForInStatement>();
+        auto for_in = make_node<ForInStatement>();
         for_in->names = std::move(name_list);
         for_in->exprs = std::move(exprs);
         for_in->body = std::move(body_block);
@@ -298,7 +298,7 @@ std::unique_ptr<Statement> Parser::parse_for() {
 
 std::unique_ptr<Statement> Parser::parse_do() {
     $consume(TokenType::DO, "internal error: 'do' expected");
-    auto block_node = std::make_unique<Block>();
+    auto block_node = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) block_node->statements.push_back(std::move(st));
@@ -306,7 +306,7 @@ std::unique_ptr<Statement> Parser::parse_do() {
             break;
     }
     $consume(TokenType::END, "expected 'end' to close 'do' block");
-    return std::make_unique<DoStatement>(std::move(block_node));
+    return make_node<DoStatement>(std::move(block_node));
 }
 
 std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_macroexp) {
@@ -349,7 +349,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
             // return nullptr;
         }
     }
-    auto func_body = std::make_unique<FunctionBody>();
+    auto func_body = make_node<FunctionBody>();
     if (match(TokenType::LESS)) {
         parse_generic_list(&func_body->type_parameters);
     }
@@ -389,7 +389,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
         func_body->return_types = parse_return_type_list(&ret_var_arg);
         func_body->varadict_return = ret_var_arg;
     }
-    auto body_block = std::make_unique<Block>();
+    auto body_block = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
@@ -398,7 +398,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
     }
     $consume(TokenType::END, "expected 'end' to close function");
     func_body->body = std::move(body_block);
-    auto func_decl = std::make_unique<FunctionDeclarationStatement>(vis);
+    auto func_decl = make_node<FunctionDeclarationStatement>(vis);
     func_decl->name_path = std::move(name_path);
     func_decl->method_name = method_name;
     func_decl->is_method = is_method;
@@ -407,7 +407,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
 }
 
 std::unique_ptr<Statement> Parser::parse_var_decl(Visibility vis) {
-    auto var_stmt = std::make_unique<VariableDeclarationStatement>(vis);
+    auto var_stmt = make_node<VariableDeclarationStatement>(vis);
     auto names = parse_att_name_list();
     if (names.empty()) {
         $push_error("expected variable name");
@@ -435,7 +435,7 @@ std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_int
     std::string name = peek_token().text;
     _pos++;
     auto body = parse_record_body();
-    return std::make_unique<RecordDeclarationStatement>(is_interface, vis, name, std::move(body));
+    return make_node<RecordDeclarationStatement>(is_interface, vis, name, std::move(body));
 }
 
 std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis) {
@@ -446,7 +446,7 @@ std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis) {
     std::string name = peek_token().text;
     _pos++;
     auto body = parse_enum_body();
-    return std::make_unique<EnumDeclarationStatement>(vis, name, std::move(body));
+    return make_node<EnumDeclarationStatement>(vis, name, std::move(body));
 }
 
 std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
@@ -465,10 +465,10 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
     if (match(TokenType::ASSIGN)) {
         if (check(TokenType::RECORD)) {
             _pos++;
-            type_value = std::make_unique<TypeRecordNode>(parse_record_body());
+            type_value = make_node<TypeRecordNode>(parse_record_body());
         } else if (check(TokenType::ENUM)) {
             _pos++;
-            type_value = std::make_unique<TypeEnumNode>(parse_enum_body()->elements);
+            type_value = make_node<TypeEnumNode>(parse_enum_body()->elements);
         } else {
             type_value = parse_type();
         }
@@ -477,7 +477,7 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
             $push_error("expected '=' in local type alias");
         }
     }
-    return std::make_unique<TypeAliasStatement>(vis, name, std::move(type_args), std::move(type_value));
+    return make_node<TypeAliasStatement>(vis, name, std::move(type_args), std::move(type_value));
 }
 
 std::vector<VariableDeclarationStatement::Name> Parser::parse_att_name_list() {
@@ -547,7 +547,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
         base = parse_expression();
         $consume(TokenType::R_PAREN, "expected ')'");
     } else if (check(TokenType::NAME)) {
-        base = std::make_unique<NameExpression>(peek_token().text);
+        base = make_node<NameExpression>(peek_token().text);
         _pos++;
     } else {
         $push_error(std::format("expected '(' or Name, got {}", peek_token()));
@@ -570,12 +570,12 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
             } else if (check(TokenType::L_BRACE)) {
                 args.push_back(parse_table_constructor());
             } else if (check(TokenType::STRING)) {
-                args.push_back(std::make_unique<StringExpression>(peek_token().text));
+                args.push_back(make_node<StringExpression>(peek_token().text));
                 _pos++;
             } else {
                 $push_error("expected arguments after method call");
             }
-            auto call = std::make_unique<FunctionCallExpression>(std::move(base), method);
+            auto call = make_node<FunctionCallExpression>(std::move(base), method);
             for (auto &arg : args) call->arguments.push_back(std::move(arg));
             base = std::move(call);
         } else if (match(TokenType::L_PAREN)) {
@@ -584,19 +584,19 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
                 args = parse_expression_list();
             }
             $consume(TokenType::R_PAREN, "expected ')'");
-            auto call = std::make_unique<FunctionCallExpression>(std::move(base), "");
+            auto call = make_node<FunctionCallExpression>(std::move(base), "");
             for (auto &arg : args) call->arguments.push_back(std::move(arg));
             base = std::move(call);
         } else if (check(TokenType::L_BRACE)) {
             auto table_arg = parse_table_constructor();
-            auto call = std::make_unique<FunctionCallExpression>(std::move(base), "");
+            auto call = make_node<FunctionCallExpression>(std::move(base), "");
             call->arguments.push_back(std::move(table_arg));
             base = std::move(call);
         } else if (check(TokenType::STRING)) {
             std::string lit = peek_token().text;
             _pos++;
-            auto call = std::make_unique<FunctionCallExpression>(std::move(base), "");
-            call->arguments.push_back(std::make_unique<StringExpression>(lit));
+            auto call = make_node<FunctionCallExpression>(std::move(base), "");
+            call->arguments.push_back(make_node<StringExpression>(lit));
             base = std::move(call);
         } else if (match(TokenType::DOT)) {
             if (not check(TokenType::NAME)) {
@@ -618,11 +618,11 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
             }
             std::string field = peek_token().text;
             _pos++;
-            base = std::make_unique<FieldExpression>(std::move(base), field);
+            base = make_node<FieldExpression>(std::move(base), field);
         } else if (match(TokenType::L_BRACKET)) {
             auto index_expression = parse_expression();
             $consume(TokenType::R_BRACKET, "expected ']'");
-            base = std::make_unique<IndexExpression>(std::move(base), std::move(index_expression));
+            base = make_node<IndexExpression>(std::move(base), std::move(index_expression));
         } else {
             break;
         }
@@ -635,19 +635,19 @@ std::unique_ptr<Expression> Parser::parse_var_expression() {
     if (not expr) return nullptr;
     if (dynamic_cast<FunctionCallExpression*>(expr.get())) {
         $push_error("unexpected function call in assignment");
-        return std::make_unique<NameExpression>("_error_");
+        return make_node<NameExpression>("_error_");
     }
     return expr;
 }
 
 std::unique_ptr<Expression> Parser::parse_primary_expression() {
     TokenType t = peek_token().type;
-    if (t == TokenType::NIL) { _pos++; return std::make_unique<NilExpression>(); }
-    if (t == TokenType::TRUE) { _pos++; return std::make_unique<BooleanExpression>(true); }
-    if (t == TokenType::FALSE) { _pos++; return std::make_unique<BooleanExpression>(false); }
-    if (t == TokenType::NUMBER) { std::string num = peek_token().text; _pos++; return std::make_unique<NumberExpression>(num); }
-    if (t == TokenType::STRING) { std::string str = peek_token().text; _pos++; return std::make_unique<StringExpression>(str); }
-    if (t == TokenType::VAR_ARG) { _pos++; return std::make_unique<VarargExpression>(); }
+    if (t == TokenType::NIL) { _pos++; return make_node<NilExpression>(); }
+    if (t == TokenType::TRUE) { _pos++; return make_node<BooleanExpression>(true); }
+    if (t == TokenType::FALSE) { _pos++; return make_node<BooleanExpression>(false); }
+    if (t == TokenType::NUMBER) { std::string num = peek_token().text; _pos++; return make_node<NumberExpression>(num); }
+    if (t == TokenType::STRING) { std::string str = peek_token().text; _pos++; return make_node<StringExpression>(str); }
+    if (t == TokenType::VAR_ARG) { _pos++; return make_node<VarargExpression>(); }
     if (t == TokenType::FUNCTION) {
         return parse_function_def_expression();
     }
@@ -681,19 +681,19 @@ std::unique_ptr<Expression> Parser::parse_exp_rec(int min_prec) {
                 auto type_node = parse_type();
                 if (type_node) cast_types.push_back(std::move(type_node));
             }
-            left = std::make_unique<CastExpression>(std::move(left), std::move(cast_types));
+            left = make_node<CastExpression>(std::move(left), std::move(cast_types));
             continue;
         } else if (type == TokenType::IS) {
             _pos++;
             auto type_node = parse_type();
-            left = std::make_unique<IsTypeExpression>(std::move(left), std::move(type_node));
+            left = make_node<IsTypeExpression>(std::move(left), std::move(type_node));
             continue;
         }
         bool right_assoc = is_right_associative(type);
         int next_min_prec = (right_assoc ? prec : prec + 1);
         _pos++;
         auto right = parse_exp_rec(next_min_prec);
-        left = std::make_unique<BinaryOperationExpression>(type, std::move(left), std::move(right));
+        left = make_node<BinaryOperationExpression>(type, std::move(left), std::move(right));
     }
     return left;
 }
@@ -729,7 +729,7 @@ std::unique_ptr<Expression> Parser::parse_unary_expression() {
         TokenType token = peek_token().type;
         _pos++;
         auto operand = parse_unary_expression();
-        return std::make_unique<UnaryOperationExpression>(token, std::move(operand));
+        return make_node<UnaryOperationExpression>(token, std::move(operand));
     }
     return parse_primary_expression();
 }
@@ -774,7 +774,7 @@ bool Parser::parse_typeargs(std::vector<std::unique_ptr<TypeNode>> *types)
 
 std::unique_ptr<Expression> Parser::parse_function_def_expression() {
     $consume(TokenType::FUNCTION, "internal error: 'function' expected");
-    auto func_body = std::make_unique<FunctionBody>();
+    auto func_body = make_node<FunctionBody>();
     if (match(TokenType::LESS)) {
         parse_generic_list(&func_body->type_parameters);
     }
@@ -814,7 +814,7 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression() {
         func_body->return_types = parse_return_type_list(&ret_var_arg);
         func_body->varadict_return = ret_var_arg;
     }
-    auto body_block = std::make_unique<Block>();
+    auto body_block = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
@@ -822,12 +822,12 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression() {
     }
     $consume(TokenType::END, "expected 'end' to close function");
     func_body->body = std::move(body_block);
-    return std::make_unique<FunctionDefinitionExpression>(std::move(func_body));
+    return make_node<FunctionDefinitionExpression>(std::move(func_body));
 }
 
 std::unique_ptr<Expression> Parser::parse_table_constructor() {
     $consume(TokenType::L_BRACE, "internal error: '{' expected");
-    auto table = std::make_unique<TableConstructorExpression>();
+    auto table = make_node<TableConstructorExpression>();
     if (not check(TokenType::R_BRACE)) {
         while (true) {
             TableConstructorExpression::Field field;
@@ -879,14 +879,14 @@ std::unique_ptr<TypeNode> Parser::parse_type() {
         first_type = parse_base_type();
     }
     if (not first_type) {
-        first_type = std::make_unique<BasicTypeNode>("nil");
+        first_type = make_node<BasicTypeNode>("nil");
     }
     if (check(TokenType::BIT_OR)) {
-        auto union_node = std::make_unique<UnionTypeNode>();
+        auto union_node = make_node<UnionTypeNode>();
         union_node->options.push_back(std::move(first_type));
         while (match(TokenType::BIT_OR)) {
             auto next_type = parse_base_type();
-            if (not next_type) next_type = std::make_unique<BasicTypeNode>("nil");
+            if (not next_type) next_type = make_node<BasicTypeNode>("nil");
             union_node->options.push_back(std::move(next_type));
         }
         return union_node;
@@ -903,18 +903,18 @@ std::unique_ptr<TypeNode> Parser::parse_base_type() {
         std::string name = peek_token().text;
         if (is_primitive(name)) {
             _pos++;
-            return std::make_unique<BasicTypeNode>(name);
+            return make_node<BasicTypeNode>(name);
         } else return parse_nominal_type();
     }
     if (check(TokenType::L_BRACE)) {
         _pos++;
         auto first_type = parse_type();
-        if (not first_type) first_type = std::make_unique<BasicTypeNode>("nil");
+        if (not first_type) first_type = make_node<BasicTypeNode>("nil");
         if (match(TokenType::COLON)) {
             auto second_type = parse_type();
-            if (not second_type) second_type = std::make_unique<BasicTypeNode>("nil");
+            if (not second_type) second_type = make_node<BasicTypeNode>("nil");
             $consume(TokenType::R_BRACE, "expected '}'");
-            auto map_node = std::make_unique<TableTypeNode>();
+            auto map_node = make_node<TableTypeNode>();
             map_node->is_map = true;
             map_node->key_type = std::move(first_type);
             map_node->element_types.push_back(std::move(second_type));
@@ -924,17 +924,17 @@ std::unique_ptr<TypeNode> Parser::parse_base_type() {
             types.push_back(std::move(first_type));
             while (match(TokenType::COMMA)) {
                 auto t = parse_type();
-                if (not t) t = std::make_unique<BasicTypeNode>("nil");
+                if (not t) t = make_node<BasicTypeNode>("nil");
                 types.push_back(std::move(t));
             }
             $consume(TokenType::R_BRACE, "expected '}'");
             if (types.size() == 1) {
-                auto arr_node = std::make_unique<TableTypeNode>();
+                auto arr_node = make_node<TableTypeNode>();
                 arr_node->is_map = false;
                 arr_node->element_types.push_back(std::move(types[0]));
                 return arr_node;
             } else {
-                auto tuple_node = std::make_unique<TableTypeNode>();
+                auto tuple_node = make_node<TableTypeNode>();
                 tuple_node->is_map = false;
                 for (auto &tt : types) tuple_node->element_types.push_back(std::move(tt));
                 return tuple_node;
@@ -967,12 +967,12 @@ std::unique_ptr<TypeNode> Parser::parse_nominal_type() {
     if (match(TokenType::LESS)) {
         if (not parse_typeargs(&type_args)) return nullptr;
     }
-    return std::make_unique<NominalTypeNode>(name_parts, std::move(type_args));
+    return make_node<NominalTypeNode>(name_parts, std::move(type_args));
 }
 
 std::unique_ptr<TypeNode> Parser::parse_function_type() {
     $consume(TokenType::FUNCTION, "internal error: 'function' expected");
-    auto node = std::make_unique<FunctionTypeNode>();
+    auto node = make_node<FunctionTypeNode>();
     if (match(TokenType::LESS)) {
         parse_generic_list(&node->type_parameters);
     }
@@ -1018,11 +1018,11 @@ std::vector<std::unique_ptr<TypeNode>> Parser::parse_type_list() {
     std::vector<std::unique_ptr<TypeNode>> types;
     auto first = parse_type();
     if (first) types.push_back(std::move(first));
-    else types.push_back(std::make_unique<BasicTypeNode>("nil"));
+    else types.push_back(make_node<BasicTypeNode>("nil"));
     while (match(TokenType::COMMA)) {
         auto t = parse_type();
         if (t) types.push_back(std::move(t));
-        else types.push_back(std::make_unique<BasicTypeNode>("nil"));
+        else types.push_back(make_node<BasicTypeNode>("nil"));
     }
     return types;
 }
@@ -1048,7 +1048,7 @@ std::vector<std::unique_ptr<TypeNode>> Parser::parse_return_type_list(bool *var_
 }
 
 std::unique_ptr<RecordBody> Parser::parse_record_body() {
-    auto rb = std::make_unique<RecordBody>();
+    auto rb = make_node<RecordBody>();
     if (match(TokenType::LESS)) {
         parse_generic_list(&rb->type_parameters);
         // if (not check(TokenType::NAME)) {
@@ -1161,7 +1161,7 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
 }
 
 std::unique_ptr<EnumBody> Parser::parse_enum_body() {
-    auto body = std::make_unique<EnumBody>();
+    auto body = make_node<EnumBody>();
     while (not check(TokenType::END) and not is_at_end()) {
         if (check(TokenType::STRING)) {
             body->elements.push_back(peek_token().text);

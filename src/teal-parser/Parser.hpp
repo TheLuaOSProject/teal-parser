@@ -33,6 +33,19 @@ private:
     size_t _pos;
     std::vector<Error> _errors;
 
+
+    template<typename T> requires std::is_base_of_v<ASTNode, T>
+    constexpr inline std::unique_ptr<T> make_node(const Token &tk, auto &&...args)
+    {
+        return std::make_unique<T>(tk, std::forward<decltype(args)>(args)...);
+    }
+
+    template<typename T> requires std::is_base_of_v<ASTNode, T>
+    constexpr inline std::unique_ptr<T> make_node(auto &&...args)
+    {
+        return std::make_unique<T>(peek_token(), std::forward<decltype(args)>(args)...);
+    }
+
     const Token &peek_token(int forward = 0) const
     {
         [[unlikely]]

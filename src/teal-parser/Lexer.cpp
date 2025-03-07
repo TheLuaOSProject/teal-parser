@@ -3,7 +3,7 @@
 #include <cassert>
 #include <iostream>
 
-using namespace teal;
+using namespace teal::parser;
 
 const Token Token::NULL_TOKEN = Token { TokenType::END_OF_FILE, "", -1, -1 };
 
