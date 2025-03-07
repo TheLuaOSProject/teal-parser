@@ -22,6 +22,9 @@ namespace teal::parser::ast
             column(tk.col)
         {}
 
+        ASTNode(const ASTNode &other) = delete;
+        ASTNode(ASTNode &&other) = delete;
+
         virtual ~ASTNode() = default;
     };
     struct Expression : ASTNode {

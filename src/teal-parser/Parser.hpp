@@ -14,13 +14,12 @@ public:
     };
 
     Parser(std::vector<Token> toks) : max_errors(10), _tokens(std::move(toks)), _pos(0) {}
-    const std::vector<Error>& errors() const { return _errors; }
-    std::unique_ptr<Block> parse() {
+    std::tuple<std::unique_ptr<ast::Block>, std::vector<Error>> parse() {
         try {
-            return parse_chunk();
+            return {parse_chunk(), _errors};
         } catch (const StopParsingException&) {
             push_error(std::format("Too many parsing errors ({})", _errors.size()), true);
-            return nullptr;
+            return {nullptr, _errors};
         }
     }
 
@@ -34,13 +33,13 @@ private:
     std::vector<Error> _errors;
 
 
-    template<typename T> requires std::is_base_of_v<ASTNode, T>
+    template<typename T> requires std::is_base_of_v<ast::ASTNode, T>
     constexpr inline std::unique_ptr<T> make_node(const Token &tk, auto &&...args)
     {
         return std::make_unique<T>(tk, std::forward<decltype(args)>(args)...);
     }
 
-    template<typename T> requires std::is_base_of_v<ASTNode, T>
+    template<typename T> requires std::is_base_of_v<ast::ASTNode, T>
     constexpr inline std::unique_ptr<T> make_node(auto &&...args)
     {
         return std::make_unique<T>(peek_token(), std::forward<decltype(args)>(args)...);
@@ -95,45 +94,45 @@ private:
         }
     }
 
-    std::unique_ptr<Block> parse_chunk();
-    std::unique_ptr<Statement> parse_stat();
-    std::unique_ptr<Statement> parse_assignment_or_call();
-    std::unique_ptr<Statement> parse_label();
-    std::unique_ptr<Statement> parse_if();
-    std::unique_ptr<Statement> parse_while();
-    std::unique_ptr<Statement> parse_repeat();
-    std::unique_ptr<Statement> parse_for();
-    std::unique_ptr<Statement> parse_do();
-    std::unique_ptr<Statement> parse_function_decl(Visibility vis, bool is_macroexp = false);
-    std::unique_ptr<Statement> parse_var_decl(Visibility vis);
-    std::unique_ptr<Statement> parse_record_decl(Visibility vis, bool is_interface);
-    std::unique_ptr<Statement> parse_enum_decl(Visibility vis);
-    std::unique_ptr<Statement> parse_type_alias_decl(Visibility vis);
-    std::vector<VariableDeclarationStatement::Name> parse_att_name_list();
+    std::unique_ptr<ast::Block> parse_chunk();
+    std::unique_ptr<ast::Statement> parse_stat();
+    std::unique_ptr<ast::Statement> parse_assignment_or_call();
+    std::unique_ptr<ast::Statement> parse_label();
+    std::unique_ptr<ast::Statement> parse_if();
+    std::unique_ptr<ast::Statement> parse_while();
+    std::unique_ptr<ast::Statement> parse_repeat();
+    std::unique_ptr<ast::Statement> parse_for();
+    std::unique_ptr<ast::Statement> parse_do();
+    std::unique_ptr<ast::Statement> parse_function_decl(ast::Visibility vis, bool is_macroexp = false);
+    std::unique_ptr<ast::Statement> parse_var_decl(ast::Visibility vis);
+    std::unique_ptr<ast::Statement> parse_record_decl(ast::Visibility vis, bool is_interface);
+    std::unique_ptr<ast::Statement> parse_enum_decl(ast::Visibility vis);
+    std::unique_ptr<ast::Statement> parse_type_alias_decl(ast::Visibility vis);
+    std::vector<ast::VariableDeclarationStatement::Name> parse_att_name_list();
     std::vector<std::string> parse_name_list();
-    std::unique_ptr<Expression> parse_expression();
-    std::vector<std::unique_ptr<Expression>> parse_expression_list();
-    std::unique_ptr<Expression> parse_prefix_expression();
-    std::unique_ptr<Expression> parse_var_expression();
-    std::unique_ptr<Expression> parse_primary_expression();
-    std::unique_ptr<Expression> parse_exp_rec(int min_prec);
+    std::unique_ptr<ast::Expression> parse_expression();
+    std::vector<std::unique_ptr<ast::Expression>> parse_expression_list();
+    std::unique_ptr<ast::Expression> parse_prefix_expression();
+    std::unique_ptr<ast::Expression> parse_var_expression();
+    std::unique_ptr<ast::Expression> parse_primary_expression();
+    std::unique_ptr<ast::Expression> parse_exp_rec(int min_prec);
     int get_binary_precedence(TokenType op);
     bool is_right_associative(TokenType op);
-    std::unique_ptr<Expression> parse_unary_expression();
-    std::unique_ptr<Expression> parse_function_def_expression();
-    std::unique_ptr<Expression> parse_table_constructor();
-    std::unique_ptr<TypeNode> parse_type();
-    std::unique_ptr<TypeNode> parse_base_type();
-    std::unique_ptr<TypeNode> parse_nominal_type();
-    std::unique_ptr<TypeNode> parse_function_type();
-    std::vector<std::unique_ptr<TypeNode>> parse_type_list();
-    std::vector<FunctionTypeNode::ParameterType> parse_param_type_list();
-    std::vector<std::unique_ptr<TypeNode>> parse_return_type_list(bool *var_arg);
-    std::unique_ptr<RecordBody> parse_record_body();
-    std::unique_ptr<EnumBody> parse_enum_body();
-    void parse_interface_list(RecordBody *rb);
-    bool parse_generic_list(std::vector<GenericTypeParameter> *t_params);
-    bool parse_typeargs(std::vector<std::unique_ptr<TypeNode>> *types);
+    std::unique_ptr<ast::Expression> parse_unary_expression();
+    std::unique_ptr<ast::Expression> parse_function_def_expression();
+    std::unique_ptr<ast::Expression> parse_table_constructor();
+    std::unique_ptr<ast::TypeNode> parse_type();
+    std::unique_ptr<ast::TypeNode> parse_base_type();
+    std::unique_ptr<ast::TypeNode> parse_nominal_type();
+    std::unique_ptr<ast::TypeNode> parse_function_type();
+    std::vector<std::unique_ptr<ast::TypeNode>> parse_type_list();
+    std::vector<ast::FunctionTypeNode::ParameterType> parse_param_type_list();
+    std::vector<std::unique_ptr<ast::TypeNode>> parse_return_type_list(bool *var_arg);
+    std::unique_ptr<ast::RecordBody> parse_record_body();
+    std::unique_ptr<ast::EnumBody> parse_enum_body();
+    void parse_interface_list(ast::RecordBody *rb);
+    bool parse_generic_list(std::vector<ast::GenericTypeParameter> *t_params);
+    bool parse_typeargs(std::vector<std::unique_ptr<ast::TypeNode>> *types);
 };
 
 }

@@ -5,6 +5,7 @@
 #include <cassert>
 
 using namespace teal::parser;
+using namespace teal::parser::ast;
 
 template<>
 struct std::formatter<Token> {
