@@ -6,7 +6,7 @@
 
 #include "Lexer.hpp"
 
-namespace teal
+namespace teal::parser
 {
     // Base AST node classes
     struct ASTNode { virtual ~ASTNode() = default; };

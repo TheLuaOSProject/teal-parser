@@ -1,6 +1,7 @@
 add_rules("mode.debug", "mode.release")
 
 set_languages("gnuxx23")
+add_requires("libc++")
 
 target("teal-parser")
     set_kind(is_kind("shared") and "shared" or "static")
@@ -13,4 +14,6 @@ target("teal-parser")
         "-Wno-c23-extensions",
         "-stdlib=libc++"
     )
+
+    add_packages("libc++")
 target_end()

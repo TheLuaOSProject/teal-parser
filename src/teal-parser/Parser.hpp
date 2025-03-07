@@ -3,7 +3,8 @@
 #include <source_location>
 #include "AST.hpp"
 
-namespace teal {
+namespace teal::parser
+{
 
 class Parser {
 public:

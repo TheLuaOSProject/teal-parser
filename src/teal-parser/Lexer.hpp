@@ -8,7 +8,8 @@
 #include <unordered_map>
 #include "Common.hpp"
 
-namespace teal {
+namespace teal::parser
+{
 
 enum class TokenType {
     END_OF_FILE, NAME, NUMBER, STRING,
@@ -194,7 +195,7 @@ public:
         size_t error_count;
     };
 
-    struct Error : public teal::Error<
+    struct Error : public teal::parser::Error<
         InvalidCharacter,
         InvalidLongStringDelimiter,
         UnterminatedLongComment,
