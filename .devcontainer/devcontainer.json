@@ -1,0 +1,20 @@
+{
+	"name": "Debian",
+	"image": "mcr.microsoft.com/devcontainers/base:debian",
+	"features": {
+		"ghcr.io/devcontainers-community/features/llvm:3": {
+			"version": "20"
+		},
+		"./xmake": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"llvm-vs-code-extensions.vscode-clangd"
+			],
+			"settings": {
+				"clangd.path": "/usr/bin/clangd"
+			}
+		}
+	}
+}
