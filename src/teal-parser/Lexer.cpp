@@ -7,18 +7,18 @@ using namespace teal::parser;
 
 const Token Token::NULL_TOKEN = Token { TokenType::END_OF_FILE, "", -1, -1 };
 
-static std::vector<std::string> split(const std::string &i, const std::string_view &d)
+static Vector<String> split(Allocator alloc, std::string_view i, std::string_view d)
 {
-    std::vector<std::string> ts;
+    auto ts = Vector<String>(alloc);
     int s = 0;
     size_t e = i.find(d);
-    while (e != std::string::npos)
+    while (e != String::npos)
     {
-        ts.push_back(i.substr(s, e - s));
+        ts.push_back(String(i.substr(s, e - s), alloc));
         s = e + 1;
         e = i.find(d, s);
     }
-    ts.push_back(i.substr(s));
+    ts.push_back(String(i.substr(s), alloc));
     return ts;
 }
 
@@ -168,8 +168,8 @@ std::expected<Token, Lexer::Error> Lexer::lex()
     }
 }
 
-std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize() {
-    auto lines = split(src, "\n");
+std::pair<Vector<Token>, Vector<Lexer::Error>> Lexer::tokenize() {
+    auto lines = split(allocator, src, "\n");
     while (true) {
         if (std::expected<Token, Error> val = lex()) {
             tokens.push_back(*val);

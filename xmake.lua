@@ -12,8 +12,25 @@ target("teal-parser")
     add_cxxflags(
         "-Wall", "-Wextra", "-Werror",
         "-Wno-c23-extensions",
-        "-stdlib=libc++"
+        "-stdlib=libc++",
+        "-fexperimental-library"
     )
 
     add_packages("libc++")
+    add_links("c++experimental")
 target_end()
+
+target("test")
+    set_kind("binary")
+    add_files("test.cpp")
+    add_cxxflags(
+        "-Wall", "-Wextra", "-Werror",
+        "-Wno-c23-extensions",
+        "-stdlib=libc++",
+        "-fexperimental-library"
+    )
+
+    add_packages("libc++")
+    add_links("c++experimental")
+
+    add_deps("teal-parser")

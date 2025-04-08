@@ -37,3 +37,5 @@ static constexpr bool operator->*(const std::variant<T...> &variant, TExpected *
         return false;
     }
 }
+
+

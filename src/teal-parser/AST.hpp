@@ -8,18 +8,19 @@
 
 namespace teal::parser::ast
 {
-    // Base AST node classes
     struct ASTNode {
         size_t line, column;
 
-        ASTNode(size_t line, size_t column):
+
+        ASTNode(Allocator, size_t line, size_t column):
             line(line),
             column(column)
         {}
 
-        ASTNode(const Token &tk):
+
+        ASTNode(Allocator, const Token &tk):
             line(tk.line),
-            column(tk.col)
+            column(tk.column)
         {}
 
         ASTNode(const ASTNode &other) = delete;
@@ -28,15 +29,17 @@ namespace teal::parser::ast
         virtual ~ASTNode() = default;
     };
     struct Expression : ASTNode {
-        Expression(const Token &tk):
-            ASTNode(tk)
+
+        Expression(Allocator allocator, const Token &tk):
+            ASTNode(allocator, tk)
         {}
 
         virtual ~Expression() = default;
     };
     struct Statement : ASTNode {
-        Statement(const Token &tk):
-            ASTNode(tk)
+
+        Statement(Allocator allocator, const Token &tk):
+            ASTNode(allocator, tk)
         {}
 
         virtual ~Statement() = default;
@@ -44,239 +47,318 @@ namespace teal::parser::ast
 
     // Expression AST nodes
     struct NameExpression : Expression {
-        std::string name;
-        NameExpression(const Token &tk, std::string n): Expression(tk), name(std::move(n)) {}
+        String name;
+
+        NameExpression(Allocator allocator, const Token &tk, String &&n):
+            Expression(allocator, tk), name(std::move(n), allocator) {}
     };
     struct NumberExpression : Expression {
-        std::string value;
-        NumberExpression(const Token &tk, std::string v): Expression(tk), value(std::move(v)) {}
+        String value;
+
+        NumberExpression(Allocator allocator, const Token &tk, String &&v):
+            Expression(allocator, tk), value(std::move(v), allocator) {}
     };
     struct StringExpression : Expression {
-        std::string value;
-        StringExpression(const Token &tk, std::string v): Expression(tk), value(std::move(v)) {}
+        String value;
+
+        StringExpression(Allocator allocator, const Token &tk, String &&v):
+            Expression(allocator, tk), value(std::move(v), allocator) {}
     };
     struct BooleanExpression : Expression {
         bool value;
-        BooleanExpression(const Token &tk, bool v): Expression(tk), value(v) {}
+
+        BooleanExpression(Allocator allocator, const Token &tk, bool v):
+            Expression(allocator, tk), value(v) {}
     };
     struct NilExpression : Expression {
-        NilExpression(const Token &tk): Expression(tk) {}
+
+        NilExpression(Allocator allocator, const Token &tk):
+            Expression(allocator, tk) {}
     };
     struct VarargExpression : Expression {
-        VarargExpression(const Token &tk): Expression(tk) {}
+
+        VarargExpression(Allocator allocator, const Token &tk):
+            Expression(allocator, tk) {}
     };  // represents "..."
     struct FunctionCallExpression : Expression {
-        std::unique_ptr<Expression> base;
-        std::string method_name;                  // method name if invoked with ':'
-        std::vector<std::unique_ptr<Expression>> arguments;
-        FunctionCallExpression(const Token &tk, std::unique_ptr<Expression> base_expr, std::string method = "")
-            : Expression(tk), base(std::move(base_expr)), method_name(std::move(method)) {}
+        Pointer<Expression> base;
+        String method_name;                  // method name if invoked with ':'
+        Vector<Pointer<Expression>> arguments;
+
+
+        FunctionCallExpression(Allocator allocator, const Token &tk, Pointer<Expression> base_expr, std::string_view method = "")
+            : Expression(allocator, tk), base(std::move(base_expr)), method_name(method, allocator), arguments(allocator) {}
     };
     struct IndexExpression : Expression {
-        std::unique_ptr<Expression> table;
-        std::unique_ptr<Expression> index;
-        IndexExpression(const Token &tk, std::unique_ptr<Expression> tbl, std::unique_ptr<Expression> idx)
-            : Expression(tk), table(std::move(tbl)), index(std::move(idx)) {}
+        Pointer<Expression> table;
+        Pointer<Expression> index;
+
+        IndexExpression(Allocator allocator, const Token &tk, Pointer<Expression> tbl, Pointer<Expression> idx)
+            : Expression(allocator, tk), table(std::move(tbl)), index(std::move(idx)) {}
     };
     struct FieldExpression : Expression {
-        std::unique_ptr<Expression> object;
-        std::string field;
-        FieldExpression(const Token &tk, std::unique_ptr<Expression> obj, std::string fld)
-            : Expression(tk), object(std::move(obj)), field(std::move(fld)) {}
+        Pointer<Expression> object;
+        String field;
+
+        FieldExpression(Allocator allocator, const Token &tk, Pointer<Expression> obj, String &&fld)
+            : Expression(allocator, tk), object(std::move(obj)), field(std::move(fld), allocator) {}
     };
     struct OperationExpression : Expression {
         TokenType operation;
 
-        OperationExpression(const Token &tk, TokenType op_t): Expression(tk), operation(op_t) {}
+
+        OperationExpression(Allocator allocator, const Token &tk, TokenType op_t):
+            Expression(allocator, tk), operation(op_t) {}
 
         virtual ~OperationExpression() = default;
     };
 
     struct BinaryOperationExpression : OperationExpression {
-        std::unique_ptr<Expression> left, right;
-        BinaryOperationExpression(const Token &tk, TokenType op_t, std::unique_ptr<Expression> l, std::unique_ptr<Expression> r)
-            : OperationExpression(tk, op_t), left(std::move(l)), right(std::move(r)) {}
+        Pointer<Expression> left, right;
+
+        BinaryOperationExpression(Allocator allocator, const Token &tk, TokenType op_t, Pointer<Expression> l, Pointer<Expression> r)
+            : OperationExpression(allocator, tk, op_t), left(std::move(l)), right(std::move(r)) {}
     };
     struct UnaryOperationExpression : OperationExpression {
-        std::unique_ptr<Expression> operand;
-        UnaryOperationExpression(const Token &tk, TokenType opType, std::unique_ptr<Expression> expr)
-            : OperationExpression(tk, opType), operand(std::move(expr)) {}
+        Pointer<Expression> operand;
+
+        UnaryOperationExpression(Allocator allocator, const Token &tk, TokenType opType, Pointer<Expression> expr)
+            : OperationExpression(allocator, tk, opType), operand(std::move(expr)) {}
     };
 
     struct TypeNode : ASTNode {
-        TypeNode(const Token &tk): ASTNode(tk) {}
+
+        TypeNode(Allocator allocator, const Token &tk): ASTNode(allocator, tk) {}
         virtual ~TypeNode() = default;
     };
 
     struct Block : ASTNode {
-        std::vector<std::unique_ptr<Statement>> statements;
-        Block(const Token &tk): ASTNode(tk) {}
+        Vector<Pointer<Statement>> statements;
+
+        Block(Allocator allocator, const Token &tk):
+            ASTNode(allocator, tk), statements(allocator) {}
     };
 
+
     struct GenericTypeParameter {
-        std::string name;
-        std::optional<std::string> is;
+        String name;
+        std::optional<String> is;
+
     };
 
     // Function body for function definitions (parameters and return types)
     struct FunctionBody : ASTNode {
-        std::vector<GenericTypeParameter> type_parameters;
+        Vector<GenericTypeParameter> type_parameters;
+
         struct Parameter {
-            std::string name;
+            String name;
             bool is_varadict;
             bool is_optional;
-            std::unique_ptr<TypeNode> type;
-        };
-        std::vector<Parameter> parameters;
-        std::vector<std::unique_ptr<TypeNode>> return_types;
-        bool varadict_return = false;
-        std::unique_ptr<Block> body;
+            Pointer<TypeNode> type;
 
-        FunctionBody(const Token &tk): ASTNode(tk) {}
+        };
+        Vector<Parameter> parameters;
+        Vector<Pointer<TypeNode>> return_types;
+        bool varadict_return = false;
+        Pointer<Block> body;
+
+
+        FunctionBody(Allocator allocator, const Token &tk):
+            ASTNode(allocator, tk),
+            type_parameters(allocator),
+            parameters(allocator),
+            return_types(allocator)
+            {}
     };
 
 
     struct FunctionDefinitionExpression : Expression {
-        std::unique_ptr<FunctionBody> body;
-        FunctionDefinitionExpression(const Token &tk, std::unique_ptr<FunctionBody> b)
-            : Expression(tk), body(std::move(b)) {}
+        Pointer<FunctionBody> body;
+
+        FunctionDefinitionExpression(Allocator allocator, const Token &tk, Pointer<FunctionBody> b)
+            : Expression(allocator, tk), body(std::move(b)) {}
     };
     struct CastExpression : Expression {
-        std::unique_ptr<Expression> expression;
-        std::vector<std::unique_ptr<TypeNode>> target_types;
-        CastExpression(const Token &tk, std::unique_ptr<Expression> e, std::vector<std::unique_ptr<TypeNode>> types)
-            : Expression(tk), expression(std::move(e)), target_types(std::move(types)) {}
+        Pointer<Expression> expression;
+        Vector<Pointer<TypeNode>> target_types;
+
+        CastExpression(Allocator allocator, const Token &tk, Pointer<Expression> e, Vector<Pointer<TypeNode>> &&types)
+            : Expression(allocator, tk), expression(std::move(e)), target_types(std::move(types), allocator) {}
     };
     struct IsTypeExpression : Expression {
-        std::unique_ptr<Expression> expression;
-        std::unique_ptr<TypeNode> type;
-        IsTypeExpression(const Token &tk, std::unique_ptr<Expression> e, std::unique_ptr<TypeNode> t)
-            : Expression(tk), expression(std::move(e)), type(std::move(t)) {}
+        Pointer<Expression> expression;
+        Pointer<TypeNode> type;
+
+        IsTypeExpression(Allocator allocator, const Token &tk, Pointer<Expression> e, Pointer<TypeNode> t)
+            : Expression(allocator, tk), expression(std::move(e)), type(std::move(t)) {}
     };
 
     //{ "this", is = "a", [get_value()] = "table" }
     struct TableConstructorExpression : Expression {
+
         struct KeyValuePair {
-            std::variant<std::string, std::unique_ptr<Expression>> key;
-            std::unique_ptr<Expression> value;
-            std::unique_ptr<TypeNode> type = nullptr; //can be null :)
+            std::variant<String, Pointer<Expression>> key;
+            Pointer<Expression> value;
+            Pointer<TypeNode> type = nullptr; //can be null :)
+
         };
 
-        using Field = std::variant<std::unique_ptr<Expression>, KeyValuePair>;
-        std::vector<Field> fields;
+        using Field = std::variant<Pointer<Expression>, KeyValuePair>;
+        Vector<Field> fields;
 
-        TableConstructorExpression(const Token &tk): Expression(tk) {}
+
+        TableConstructorExpression(Allocator allocator, const Token &tk):
+             Expression(allocator, tk), fields(allocator) {}
     };
 
     // Type AST nodes
     struct BasicTypeNode : TypeNode {
-        std::string name;
-        BasicTypeNode(const Token &tk, std::string n): TypeNode(tk), name(std::move(n)) {}
+        String name;
+
+        BasicTypeNode(Allocator allocator, const Token &tk, String &&n):
+            TypeNode(allocator, tk), name(std::move(n), allocator) {}
     };
     struct NominalTypeNode : TypeNode {
-        std::vector<std::string> name_parts;
-        std::vector<std::unique_ptr<TypeNode>> type_arguments;
-        NominalTypeNode(const Token &tk, std::vector<std::string> parts, std::vector<std::unique_ptr<TypeNode>> &&args = {})
-            : TypeNode(tk), name_parts(std::move(parts)), type_arguments(std::move(args)) {}
+        Vector<String> name_parts;
+        Vector<Pointer<TypeNode>> type_arguments;
+
+
+        NominalTypeNode(Allocator allocator, const Token &tk, Vector<String> &&parts, Vector<Pointer<TypeNode>> &&args)
+            : TypeNode(allocator, tk), name_parts(std::move(parts), allocator), type_arguments(std::move(args), allocator) {}
     };
     struct TableTypeNode : TypeNode {
-        std::vector<std::unique_ptr<TypeNode>> element_types;
-        std::unique_ptr<TypeNode> key_type;
+        Vector<Pointer<TypeNode>> element_types;
+        Pointer<TypeNode> key_type;
         bool is_map;
-        TableTypeNode(const Token &tk): TypeNode(tk), is_map(false) {}
+
+        TableTypeNode(Allocator allocator, const Token &tk):
+            TypeNode(allocator, tk), element_types(allocator), is_map(false) {}
     };
     struct FunctionTypeNode : TypeNode {
-        std::vector<GenericTypeParameter> type_parameters;
+        Vector<GenericTypeParameter> type_parameters;
+
         struct ParameterType {
-            std::optional<std::string> name;
+            std::optional<String> name;
             bool is_optional;
-            std::unique_ptr<TypeNode> type;
+            Pointer<TypeNode> type;
+
         };
-        std::vector<ParameterType> parameters;
-        std::vector<std::unique_ptr<TypeNode>> return_types;
+        Vector<ParameterType> parameters;
+        Vector<Pointer<TypeNode>> return_types;
         bool varadict_return = false;
 
-        FunctionTypeNode(const Token &tk): TypeNode(tk) {}
+
+        FunctionTypeNode(Allocator allocator, const Token &tk):
+            TypeNode(allocator, tk),
+            type_parameters(allocator),
+            parameters(allocator),
+            return_types(allocator) {}
     };
     struct UnionTypeNode : TypeNode {
-        std::vector<std::unique_ptr<TypeNode>> options;
-        UnionTypeNode(const Token &tk): TypeNode(tk) {}
+        Vector<Pointer<TypeNode>> options;
+
+        UnionTypeNode(Allocator allocator, const Token &tk):
+            TypeNode(allocator, tk), options(allocator) {}
     };
     struct TypeRecordNode : TypeNode {
-        std::unique_ptr<ASTNode> body;  // points to a RecordBody AST node
-        TypeRecordNode(const Token &tk, std::unique_ptr<ASTNode> b)
-            : TypeNode(tk), body(std::move(b)) {}
+        Pointer<ASTNode> body;  // points to a RecordBody AST node
+
+        TypeRecordNode(Allocator allocator, const Token &tk, Pointer<ASTNode> b)
+            : TypeNode(allocator, tk), body(std::move(b)) {}
     };
     struct TypeEnumNode : TypeNode {
-        std::vector<std::string> elements;
-        TypeEnumNode(const Token &tk, std::vector<std::string> elems)
-            : TypeNode(tk), elements(std::move(elems)) {}
+        Vector<String> elements;
+
+        TypeEnumNode(Allocator allocator, const Token &tk, Vector<String> &&elems)
+            : TypeNode(allocator, tk), elements(std::move(elems), allocator) {}
     };
     struct RequireTypeNode : TypeNode {
-        std::string module_name;
-        std::vector<std::string> type_names;
-        RequireTypeNode(const Token &tk, std::string mod, std::vector<std::string> names)
-            : TypeNode(tk), module_name(std::move(mod)), type_names(std::move(names)) {}
+        String module_name;
+        Vector<String> type_names;
+
+        RequireTypeNode(Allocator allocator, const Token &tk, String &&mod, Vector<String> &&names)
+            : TypeNode(allocator, tk), module_name(std::move(mod), allocator), type_names(std::move(names), allocator) {}
     };
 
 
     // Statement AST nodes
     struct ReturnStatement : Statement {
-        std::vector<std::unique_ptr<Expression>> values;
-        ReturnStatement(const Token &tk): Statement(tk) {}
+        Vector<Pointer<Expression>> values;
+
+        ReturnStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk), values(allocator) {}
     };
     struct BreakStatement : Statement {
-        BreakStatement(const Token &tk): Statement(tk) {}
+
+        BreakStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk) {}
     };
     struct GotoStatement : Statement {
-        std::string label;
-        GotoStatement(const Token &tk, std::string lbl): Statement(tk), label(std::move(lbl)) {}
+        String label;
+
+        GotoStatement(Allocator allocator, const Token &tk, String &&lbl):
+            Statement(allocator, tk), label(std::move(lbl), allocator) {}
     };
     struct LabelStatement : Statement {
-        std::string name;
-        LabelStatement(const Token &tk, std::string n): Statement(tk), name(std::move(n)) {}
+        String name;
+
+        LabelStatement(Allocator allocator, const Token &tk, String &&n):
+            Statement(allocator, tk), name(std::move(n), allocator) {}
     };
     struct DoStatement : Statement {
-        std::unique_ptr<Block> body;
-        DoStatement(const Token &tk, std::unique_ptr<Block> b): Statement(tk), body(std::move(b)) {}
+        Pointer<Block> body;
+
+        DoStatement(Allocator allocator, const Token &tk, Pointer<Block> b):
+            Statement(allocator, tk), body(std::move(b)) {}
     };
     struct IfStatement : Statement {
         struct IfBranch {
-            std::unique_ptr<Expression> condition;
-            std::unique_ptr<Block> block;
-        };
-        std::vector<IfBranch> if_branches;
-        std::unique_ptr<Block> else_block;
+            Pointer<Expression> condition;
+            Pointer<Block> block;
 
-        IfStatement(const Token &tk): Statement(tk) {}
+        };
+        Vector<IfBranch> if_branches;
+        Pointer<Block> else_block;
+
+
+        IfStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk), if_branches(allocator) {}
     };
     struct WhileStatement : Statement {
-        std::unique_ptr<Expression> condition;
-        std::unique_ptr<Block> body;
+        Pointer<Expression> condition;
+        Pointer<Block> body;
 
-        WhileStatement(const Token &tk): Statement(tk) {}
+
+        WhileStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk) {}
     };
     struct RepeatStatement : Statement {
-        std::unique_ptr<Block> body;
-        std::unique_ptr<Expression> condition;
+        Pointer<Block> body;
+        Pointer<Expression> condition;
 
-        RepeatStatement(const Token &tk): Statement(tk) {}
+
+        RepeatStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk) {}
     };
     struct ForNumericStatement : Statement {
-        std::string variable_name;
+        String variable_name;
         struct {
-            std::unique_ptr<Expression> start, end, step;
+            Pointer<Expression> start, end, step;
         } expressions;
-        std::unique_ptr<Block> body;
+        Pointer<Block> body;
 
-        ForNumericStatement(const Token &tk): Statement(tk) {}
+
+        ForNumericStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk), variable_name(allocator) {}
     };
     struct ForInStatement : Statement {
-        std::vector<std::string> names;
-        std::vector<std::unique_ptr<Expression>> exprs;
-        std::unique_ptr<Block> body;
+        Vector<String> names;
+        Vector<Pointer<Expression>> exprs;
+        Pointer<Block> body;
 
-        ForInStatement(const Token &tk): Statement(tk) {}
+
+        ForInStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk), names(allocator), exprs(allocator) {}
     };
 
     enum class Visibility {
@@ -287,91 +369,113 @@ namespace teal::parser::ast
 
     struct FunctionDeclarationStatement : Statement {
         Visibility visibility;
-        std::vector<std::string> name_path;
-        std::string method_name;
+        Vector<String> name_path;
+        String method_name;
         bool is_method;
-        std::unique_ptr<FunctionBody> body;
+        Pointer<FunctionBody> body;
 
-        FunctionDeclarationStatement(const Token &tk, Visibility vis)
-            : Statement(tk), visibility(vis), is_method(false) {}
+
+        FunctionDeclarationStatement(Allocator allocator, const Token &tk, Visibility vis)
+            : Statement(allocator, tk), visibility(vis), name_path(allocator), method_name(allocator), is_method(false) {}
     };
     struct VariableDeclarationStatement : Statement {
         Visibility visibility;
-        struct Name {  // name with optional attribute (for <attr>)
-            std::string name;
-            std::optional<std::string> attribute;
-        };
-        std::vector<Name> names;
-        std::vector<std::unique_ptr<TypeNode>> types;
-        std::vector<std::unique_ptr<Expression>> values;
 
-        VariableDeclarationStatement(const Token &tk, Visibility vis)
-            : Statement(tk), visibility(vis) {}
+        struct Name {  // name with optional attribute (for <attr>)
+            String name;
+            std::optional<String> attribute;
+
+             Name(String &&n): name(std::move(n)) {}
+        };
+        Vector<Name> names;
+        Vector<Pointer<TypeNode>> types;
+        Vector<Pointer<Expression>> values;
+
+
+        VariableDeclarationStatement(Allocator allocator, const Token &tk, Visibility vis)
+            : Statement(allocator, tk), visibility(vis), names(allocator), types(allocator), values(allocator) {}
     };
     struct RecordBody : ASTNode {
-        std::vector<GenericTypeParameter> type_parameters;
-        std::unique_ptr<TypeNode> structural_ext;
-        std::vector<std::unique_ptr<TypeNode>> interface_ext;
-        std::unique_ptr<Expression> where_clause;
+        Vector<GenericTypeParameter> type_parameters;
+        Pointer<TypeNode> structural_ext;
+        Vector<Pointer<TypeNode>> interface_ext;
+        Pointer<Expression> where_clause;
 
-        //todo: Turn this into `std::variant`
+
         struct Entry {
             enum class Kind { FIELD, USERDATA, TYPE_ALIAS, RECORD, ENUM, INTERFACE } kind;
             bool is_metamethod;
-            std::optional<std::string> name;
-            std::optional<std::string> key_literal;
-            std::unique_ptr<TypeNode> type;
-            std::string type_name;
-            std::unique_ptr<TypeNode> type_value;
-            std::string nested_name;
-            std::unique_ptr<ASTNode> nested_body;
-            // Entry() : isMetamethod(false) {}
-        };
-        std::vector<Entry> entries;
+            std::optional<String> name;
+            std::optional<String> key_literal;
+            Pointer<TypeNode> type;
+            String type_name;
+            Pointer<TypeNode> type_value;
+            String nested_name;
+            Pointer<ASTNode> nested_body;
 
-        RecordBody(const Token &tk): ASTNode(tk) {}
+        };
+        Vector<Entry> entries;
+
+
+        RecordBody(Allocator allocator, const Token &tk):
+            ASTNode(allocator, tk),
+            type_parameters(allocator),
+            interface_ext(allocator),
+            entries(allocator) {}
     };
     struct RecordDeclarationStatement : Statement {
         bool is_interface;
         Visibility visibility;
-        std::string name;
-        std::unique_ptr<RecordBody> body;
+        String name;
+        Pointer<RecordBody> body;
 
-        RecordDeclarationStatement(const Token &tk, bool interface, Visibility vis, std::string n, std::unique_ptr<RecordBody> b)
-            : Statement(tk), is_interface(interface), visibility(vis), name(std::move(n)), body(std::move(b)) {}
+
+        RecordDeclarationStatement(Allocator allocator, const Token &tk, bool interface, Visibility vis, String &&n, Pointer<RecordBody> b):
+            Statement(allocator, tk),
+            is_interface(interface),
+            visibility(vis),
+            name(std::move(n), allocator),
+            body(std::move(b)) {}
     };
     struct EnumBody : ASTNode {
-        std::vector<std::string> elements;
+        Vector<String> elements;
 
-        EnumBody(const Token &tk): ASTNode(tk) {}
+
+        EnumBody(Allocator allocator, const Token &tk):
+            ASTNode(allocator, tk), elements(allocator) {}
     };
     struct EnumDeclarationStatement : Statement {
         Visibility visibility;
-        std::string name;
-        std::unique_ptr<EnumBody> body;
+        String name;
+        Pointer<EnumBody> body;
 
-        EnumDeclarationStatement(const Token &tk, Visibility vis, std::string n, std::unique_ptr<EnumBody> b)
-            : Statement(tk), visibility(vis), name(std::move(n)), body(std::move(b)) {}
+
+        EnumDeclarationStatement(Allocator allocator, const Token &tk, Visibility vis, String &&n, Pointer<EnumBody> b)
+            : Statement(allocator, tk), visibility(vis), name(std::move(n), allocator), body(std::move(b)) {}
     };
     struct TypeAliasStatement : Statement {
         Visibility visibility;
-        std::string name;
-        std::vector<GenericTypeParameter> type_parameters;
-        std::unique_ptr<TypeNode> type;
+        String name;
+        Vector<GenericTypeParameter> type_parameters;
+        Pointer<TypeNode> type;
 
-        TypeAliasStatement(const Token &tk, Visibility vis, std::string n, std::vector<GenericTypeParameter> &&tparams, std::unique_ptr<TypeNode> val)
-            : Statement(tk), visibility(vis), name(std::move(n)), type_parameters(std::move(tparams)), type(std::move(val)) {}
+
+        TypeAliasStatement(Allocator allocator, const Token &tk, Visibility vis, String &&n, Vector<GenericTypeParameter> &&tparams, Pointer<TypeNode> val)
+            : Statement(allocator, tk), visibility(vis), name(std::move(n), allocator), type_parameters(std::move(tparams), allocator), type(std::move(val)) {}
     };
     struct AssignmentStatement : Statement {
-        std::vector<std::unique_ptr<Expression>> left;
-        std::vector<std::unique_ptr<Expression>> right;
+        Vector<Pointer<Expression>> left;
+        Vector<Pointer<Expression>> right;
 
-        AssignmentStatement(const Token &tk): Statement(tk) {}
+
+        AssignmentStatement(Allocator allocator, const Token &tk):
+            Statement(allocator, tk), left(allocator), right(allocator) {}
     };
 
     struct CallStatement : Statement {
-        std::unique_ptr<FunctionCallExpression> call;
-        CallStatement(const Token &tk, std::unique_ptr<FunctionCallExpression> c)
-            : Statement(tk), call(std::move(c)) {}
+        Pointer<FunctionCallExpression> call;
+
+        CallStatement(Allocator allocator, const Token &tk, Pointer<FunctionCallExpression> c)
+            : Statement(allocator, tk), call(std::move(c)) {}
     };
 }

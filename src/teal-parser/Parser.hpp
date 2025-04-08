@@ -9,12 +9,20 @@ namespace teal::parser
 class Parser {
 public:
     struct Error {
-        std::string message;
+        String message;
         int line, column;
+
+        constexpr inline std::string to_string() const
+        { return message.data(); }
     };
 
-    Parser(std::vector<Token> toks) : max_errors(10), _tokens(std::move(toks)), _pos(0) {}
-    std::tuple<std::unique_ptr<ast::Block>, std::vector<Error>> parse() {
+    Parser(Vector<Token> toks, Allocator alloc = Allocator(std::pmr::get_default_resource())):
+        allocator(alloc),
+        max_errors(10),
+        _tokens(std::move(toks), alloc),
+        _pos(0)
+    {}
+    std::tuple<Pointer<ast::Block>, Vector<Error>> parse() {
         try {
             return {parse_chunk(), _errors};
         } catch (const StopParsingException&) {
@@ -23,27 +31,28 @@ public:
         }
     }
 
+    const Allocator allocator;
     const size_t max_errors;
 private:
     class StopParsingException : public std::exception {};
     class UnexpectedEOFException : public StopParsingException {};
 
-    std::vector<Token> _tokens;
+    Vector<Token> _tokens;
     size_t _pos;
-    std::vector<Error> _errors;
+    Vector<Error> _errors;
 
+    constexpr inline String string(std::string_view s)
+    { return String(s, allocator); }
 
-    template<typename T> requires std::is_base_of_v<ast::ASTNode, T>
-    constexpr inline std::unique_ptr<T> make_node(const Token &tk, auto &&...args)
-    {
-        return std::make_unique<T>(tk, std::forward<decltype(args)>(args)...);
-    }
+    constexpr inline String string()
+    { return String(allocator); }
+    template<typename T, typename ...TArgs> requires std::is_base_of_v<ast::ASTNode, T>
+    constexpr inline Pointer<T> make_node(const Token &tk, TArgs &&...args)
+    { return allocate<T>(allocator, allocator, tk, std::forward<TArgs>(args)...); }
 
-    template<typename T> requires std::is_base_of_v<ast::ASTNode, T>
-    constexpr inline std::unique_ptr<T> make_node(auto &&...args)
-    {
-        return std::make_unique<T>(peek_token(), std::forward<decltype(args)>(args)...);
-    }
+    template<typename T, typename ...TArgs> requires std::is_base_of_v<ast::ASTNode, T>
+    constexpr inline Pointer<T> make_node(TArgs &&...args)
+    { return allocate<T>(allocator, allocator, peek_token(), std::forward<TArgs>(args)...); }
 
     const Token &peek_token(int forward = 0) const
     {
@@ -65,13 +74,13 @@ private:
         }
         return false;
     }
-    constexpr inline void push_error(const std::string_view& msg, bool nothrow = false) {
-        _errors.push_back({ std::string(msg), peek_token().line, peek_token().col });
+    constexpr inline void push_error(std::string_view msg, bool nothrow = false) {
+        _errors.push_back({ string(msg), peek_token().line, peek_token().column });
         if (_errors.size() >= max_errors and not nothrow)
             throw StopParsingException{};
     }
 #define $push_error(msg, ...) push_error(std::format("<{}:{}> {}", std::source_location::current().file_name(), std::source_location::current().line(), msg) __VA_OPT__(,) __VA_ARGS__)
-    std::optional<Token> consume(TokenType t, const std::string_view& err_msg) {
+    std::optional<Token> consume(TokenType t, std::string_view err_msg) {
         if (check(t)) {
             Token tok = peek_token();
             _pos++;
@@ -94,45 +103,45 @@ private:
         }
     }
 
-    std::unique_ptr<ast::Block> parse_chunk();
-    std::unique_ptr<ast::Statement> parse_stat();
-    std::unique_ptr<ast::Statement> parse_assignment_or_call();
-    std::unique_ptr<ast::Statement> parse_label();
-    std::unique_ptr<ast::Statement> parse_if();
-    std::unique_ptr<ast::Statement> parse_while();
-    std::unique_ptr<ast::Statement> parse_repeat();
-    std::unique_ptr<ast::Statement> parse_for();
-    std::unique_ptr<ast::Statement> parse_do();
-    std::unique_ptr<ast::Statement> parse_function_decl(ast::Visibility vis, bool is_macroexp = false);
-    std::unique_ptr<ast::Statement> parse_var_decl(ast::Visibility vis);
-    std::unique_ptr<ast::Statement> parse_record_decl(ast::Visibility vis, bool is_interface);
-    std::unique_ptr<ast::Statement> parse_enum_decl(ast::Visibility vis);
-    std::unique_ptr<ast::Statement> parse_type_alias_decl(ast::Visibility vis);
-    std::vector<ast::VariableDeclarationStatement::Name> parse_att_name_list();
-    std::vector<std::string> parse_name_list();
-    std::unique_ptr<ast::Expression> parse_expression();
-    std::vector<std::unique_ptr<ast::Expression>> parse_expression_list();
-    std::unique_ptr<ast::Expression> parse_prefix_expression();
-    std::unique_ptr<ast::Expression> parse_var_expression();
-    std::unique_ptr<ast::Expression> parse_primary_expression();
-    std::unique_ptr<ast::Expression> parse_exp_rec(int min_prec);
+    Pointer<ast::Block> parse_chunk();
+    Pointer<ast::Statement> parse_stat();
+    Pointer<ast::Statement> parse_assignment_or_call();
+    Pointer<ast::Statement> parse_label();
+    Pointer<ast::Statement> parse_if();
+    Pointer<ast::Statement> parse_while();
+    Pointer<ast::Statement> parse_repeat();
+    Pointer<ast::Statement> parse_for();
+    Pointer<ast::Statement> parse_do();
+    Pointer<ast::Statement> parse_function_decl(ast::Visibility vis, bool is_macroexp = false);
+    Pointer<ast::Statement> parse_var_decl(ast::Visibility vis);
+    Pointer<ast::Statement> parse_record_decl(ast::Visibility vis, bool is_interface);
+    Pointer<ast::Statement> parse_enum_decl(ast::Visibility vis);
+    Pointer<ast::Statement> parse_type_alias_decl(ast::Visibility vis);
+    Vector<ast::VariableDeclarationStatement::Name> parse_att_name_list();
+    Vector<String> parse_name_list();
+    Pointer<ast::Expression> parse_expression();
+    Vector<Pointer<ast::Expression>> parse_expression_list();
+    Pointer<ast::Expression> parse_prefix_expression();
+    Pointer<ast::Expression> parse_var_expression();
+    Pointer<ast::Expression> parse_primary_expression();
+    Pointer<ast::Expression> parse_exp_rec(int min_prec);
     int get_binary_precedence(TokenType op);
     bool is_right_associative(TokenType op);
-    std::unique_ptr<ast::Expression> parse_unary_expression();
-    std::unique_ptr<ast::Expression> parse_function_def_expression();
-    std::unique_ptr<ast::Expression> parse_table_constructor();
-    std::unique_ptr<ast::TypeNode> parse_type();
-    std::unique_ptr<ast::TypeNode> parse_base_type();
-    std::unique_ptr<ast::TypeNode> parse_nominal_type();
-    std::unique_ptr<ast::TypeNode> parse_function_type();
-    std::vector<std::unique_ptr<ast::TypeNode>> parse_type_list();
-    std::vector<ast::FunctionTypeNode::ParameterType> parse_param_type_list();
-    std::vector<std::unique_ptr<ast::TypeNode>> parse_return_type_list(bool *var_arg);
-    std::unique_ptr<ast::RecordBody> parse_record_body();
-    std::unique_ptr<ast::EnumBody> parse_enum_body();
+    Pointer<ast::Expression> parse_unary_expression();
+    Pointer<ast::Expression> parse_function_def_expression();
+    Pointer<ast::Expression> parse_table_constructor();
+    Pointer<ast::TypeNode> parse_type();
+    Pointer<ast::TypeNode> parse_base_type();
+    Pointer<ast::TypeNode> parse_nominal_type();
+    Pointer<ast::TypeNode> parse_function_type();
+    Vector<Pointer<ast::TypeNode>> parse_type_list();
+    Vector<ast::FunctionTypeNode::ParameterType> parse_param_type_list();
+    Vector<Pointer<ast::TypeNode>> parse_return_type_list(bool *var_arg);
+    Pointer<ast::RecordBody> parse_record_body();
+    Pointer<ast::EnumBody> parse_enum_body();
     void parse_interface_list(ast::RecordBody *rb);
-    bool parse_generic_list(std::vector<ast::GenericTypeParameter> *t_params);
-    bool parse_typeargs(std::vector<std::unique_ptr<ast::TypeNode>> *types);
+    bool parse_generic_list(Vector<ast::GenericTypeParameter> *t_params);
+    bool parse_typeargs(Vector<Pointer<ast::TypeNode>> *types);
 };
 
 }
