@@ -4,7 +4,7 @@
 /teal.dylib
 /test.lua
 /t.c
-/compile_commands
+/compile_commands.json
 /NewLexer.*
 t.tl
 .vscode/launch.json
