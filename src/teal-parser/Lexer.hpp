@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <functional>
 #include <vector>
 #include <string>
 #include <cctype>
@@ -204,8 +205,7 @@ public:
         Overflow,
         TooManyErrors
     > {
-        int line;
-        int column;
+        int line, column;
 
         constexpr inline std::string to_string() const {
             switch (kind.index()) {

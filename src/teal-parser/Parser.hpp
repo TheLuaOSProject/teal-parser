@@ -11,6 +11,9 @@ public:
     struct Error {
         std::string message;
         int line, column;
+
+        std::string to_string() const
+        { return message; }
     };
 
     Parser(std::vector<Token> toks) : max_errors(10), _tokens(std::move(toks)), _pos(0) {}

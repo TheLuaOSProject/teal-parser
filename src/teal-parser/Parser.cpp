@@ -93,7 +93,7 @@ std::unique_ptr<Statement> Parser::parse_stat() {
         }
         std::string label_name = peek_token().text;
         _pos++;
-        return make_node<GotoStatement>(label_name);
+        return make_node<GotoStatement>(std::move(label_name));
     }
     case TokenType::DOUBLE_COLON:
         return parse_label();
@@ -151,7 +151,7 @@ std::unique_ptr<Statement> Parser::parse_label() {
     std::string name = peek_token().text;
     _pos++;
     $consume(TokenType::DOUBLE_COLON, "expected '::' after label name");
-    return make_node<LabelStatement>(name);
+    return make_node<LabelStatement>(std::move(name));
 }
 
 std::unique_ptr<Statement> Parser::parse_if() {
@@ -403,6 +403,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
     func_decl->name_path = std::move(name_path);
     func_decl->method_name = method_name;
     func_decl->is_method = is_method;
+    func_decl->is_macro = is_macroexp;
     func_decl->body = std::move(func_body);
     return func_decl;
 }
@@ -436,7 +437,7 @@ std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_int
     std::string name = peek_token().text;
     _pos++;
     auto body = parse_record_body();
-    return make_node<RecordDeclarationStatement>(is_interface, vis, name, std::move(body));
+    return make_node<RecordDeclarationStatement>(is_interface, vis, std::move(name), std::move(body));
 }
 
 std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis) {
@@ -447,7 +448,7 @@ std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis) {
     std::string name = peek_token().text;
     _pos++;
     auto body = parse_enum_body();
-    return make_node<EnumDeclarationStatement>(vis, name, std::move(body));
+    return make_node<EnumDeclarationStatement>(vis, std::move(name), std::move(body));
 }
 
 std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
@@ -469,7 +470,7 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
             type_value = make_node<TypeRecordNode>(parse_record_body());
         } else if (check(TokenType::ENUM)) {
             _pos++;
-            type_value = make_node<TypeEnumNode>(parse_enum_body()->elements);
+            type_value = make_node<TypeEnumNode>(std::move(parse_enum_body()->elements));
         } else {
             type_value = parse_type();
         }
@@ -478,7 +479,7 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
             $push_error("expected '=' in local type alias");
         }
     }
-    return make_node<TypeAliasStatement>(vis, name, std::move(type_args), std::move(type_value));
+    return make_node<TypeAliasStatement>(vis, std::move(name), std::move(type_args), std::move(type_value));
 }
 
 std::vector<VariableDeclarationStatement::Name> Parser::parse_att_name_list() {
@@ -548,7 +549,8 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
         base = parse_expression();
         $consume(TokenType::R_PAREN, "expected ')'");
     } else if (check(TokenType::NAME)) {
-        base = make_node<NameExpression>(peek_token().text);
+        auto s = peek_token().text;
+        base = make_node<NameExpression>(std::move(s)); //specialisation of std::move for string makes it const qualified. Why? because fuck you
         _pos++;
     } else {
         $push_error(std::format("expected '(' or Name, got {}", peek_token()));
@@ -571,12 +573,13 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
             } else if (check(TokenType::L_BRACE)) {
                 args.push_back(parse_table_constructor());
             } else if (check(TokenType::STRING)) {
-                args.push_back(make_node<StringExpression>(peek_token().text));
+                auto x = peek_token().text;
+                args.push_back(make_node<StringExpression>(std::move(x)));
                 _pos++;
             } else {
                 $push_error("expected arguments after method call");
             }
-            auto call = make_node<FunctionCallExpression>(std::move(base), method);
+            auto call = make_node<FunctionCallExpression>(std::move(base), std::move(method));
             for (auto &arg : args) call->arguments.push_back(std::move(arg));
             base = std::move(call);
         } else if (match(TokenType::L_PAREN)) {
@@ -597,7 +600,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
             std::string lit = peek_token().text;
             _pos++;
             auto call = make_node<FunctionCallExpression>(std::move(base), "");
-            call->arguments.push_back(make_node<StringExpression>(lit));
+            call->arguments.push_back(make_node<StringExpression>(std::move(lit)));
             base = std::move(call);
         } else if (match(TokenType::DOT)) {
             if (not check(TokenType::NAME)) {
@@ -619,7 +622,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
             }
             std::string field = peek_token().text;
             _pos++;
-            base = make_node<FieldExpression>(std::move(base), field);
+            base = make_node<FieldExpression>(std::move(base), std::move(field));
         } else if (match(TokenType::L_BRACKET)) {
             auto index_expression = parse_expression();
             $consume(TokenType::R_BRACKET, "expected ']'");
@@ -646,8 +649,8 @@ std::unique_ptr<Expression> Parser::parse_primary_expression() {
     if (t == TokenType::NIL) { _pos++; return make_node<NilExpression>(); }
     if (t == TokenType::TRUE) { _pos++; return make_node<BooleanExpression>(true); }
     if (t == TokenType::FALSE) { _pos++; return make_node<BooleanExpression>(false); }
-    if (t == TokenType::NUMBER) { std::string num = peek_token().text; _pos++; return make_node<NumberExpression>(num); }
-    if (t == TokenType::STRING) { std::string str = peek_token().text; _pos++; return make_node<StringExpression>(str); }
+    if (t == TokenType::NUMBER) { std::string num = peek_token().text; _pos++; return make_node<NumberExpression>(std::move(num)); }
+    if (t == TokenType::STRING) { std::string str = peek_token().text; _pos++; return make_node<StringExpression>(std::move(str)); }
     if (t == TokenType::VAR_ARG) { _pos++; return make_node<VarargExpression>(); }
     if (t == TokenType::FUNCTION) {
         return parse_function_def_expression();
@@ -904,7 +907,7 @@ std::unique_ptr<TypeNode> Parser::parse_base_type() {
         std::string name = peek_token().text;
         if (is_primitive(name)) {
             _pos++;
-            return make_node<BasicTypeNode>(name);
+            return make_node<BasicTypeNode>(std::move(name));
         } else return parse_nominal_type();
     }
     if (check(TokenType::L_BRACE)) {
@@ -968,7 +971,7 @@ std::unique_ptr<TypeNode> Parser::parse_nominal_type() {
     if (match(TokenType::LESS)) {
         if (not parse_typeargs(&type_args)) return nullptr;
     }
-    return make_node<NominalTypeNode>(name_parts, std::move(type_args));
+    return make_node<NominalTypeNode>(std::move(name_parts), std::move(type_args));
 }
 
 std::unique_ptr<TypeNode> Parser::parse_function_type() {
@@ -1075,7 +1078,7 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
         RecordBody::Entry entry;
         if (check(TokenType::NAME) and peek_token().text == "userdata") {
             _pos++;
-            entry.kind = RecordBody::Entry::Kind::USERDATA;
+            entry.entry_kind = RecordBody::Entry::Kind::USERDATA;
             rb->entries.push_back(std::move(entry));
             continue;
         }
@@ -1089,7 +1092,7 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
             }
             $consume(TokenType::ASSIGN, "expected '=' after type name");
             entry.type_value = parse_type();
-            entry.kind = RecordBody::Entry::Kind::TYPE_ALIAS;
+            entry.entry_kind = RecordBody::Entry::Kind::TYPE_ALIAS;
             rb->entries.push_back(std::move(entry));
             continue;
         }
@@ -1101,7 +1104,7 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
                 _pos++;
             }
             entry.nested_body = parse_record_body();
-            entry.kind = RecordBody::Entry::Kind::RECORD;
+            entry.entry_kind = RecordBody::Entry::Kind::RECORD;
             rb->entries.push_back(std::move(entry));
             continue;
         }
@@ -1113,7 +1116,7 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
                 _pos++;
             }
             entry.nested_body = parse_enum_body();
-            entry.kind = RecordBody::Entry::Kind::ENUM;
+            entry.entry_kind = RecordBody::Entry::Kind::ENUM;
             rb->entries.push_back(std::move(entry));
             continue;
         }
@@ -1125,7 +1128,7 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
                 _pos++;
             }
             entry.nested_body = parse_record_body();
-            entry.kind = RecordBody::Entry::Kind::INTERFACE;
+            entry.entry_kind = RecordBody::Entry::Kind::INTERFACE;
             rb->entries.push_back(std::move(entry));
             continue;
         }
@@ -1154,7 +1157,7 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
         $consume(TokenType::COLON, std::format("expected ':' after record key"));
         entry.type = parse_type();
         entry.is_metamethod = is_meta;
-        entry.kind = RecordBody::Entry::Kind::FIELD;
+        entry.entry_kind = RecordBody::Entry::Kind::FIELD;
         rb->entries.push_back(std::move(entry));
     }
     $consume(TokenType::END, "expected 'end' to close record");
