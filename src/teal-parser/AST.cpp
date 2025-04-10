@@ -15,6 +15,8 @@
 
 #include "AST.hpp"
 
+#include <sstream>
+
 using namespace teal::parser::ast;
 using namespace teal::parser::ast::serialisation;
 
@@ -430,7 +432,7 @@ template<typename Range>
 constexpr inline auto operator|(Range &&range, const ReplaceAdaptor &adaptor)
 { return replace_all(std::string(std::begin(range), std::end(range)), adaptor.from, adaptor.to); }
 constexpr inline auto replace(std::string_view from, std::string_view to)
-{ return ReplaceAdaptor{from, to}; }
+{ return ReplaceAdaptor { from, to }; }
 
 //Properly escape the string so it can be properly used for JSON
 std::string escape_string(const std::string &str)
@@ -482,6 +484,47 @@ std::string Value::to_json()
             arr += "]";
             return arr;
         },
-        [](const auto &x) { return std::format("Unknown node of type {}", typeid(x).name()); }
+        [](const auto &x) { throw std::runtime_error(std::format("Unknown node of type {}", typeid(x).name())); }
+    );
+}
+
+std::string Value::to_lua_table()
+{
+    return match(*this) (
+        [](const std::string &v) {
+            return std::format("[===[{}]===]", v);
+        },
+        [](bool v) { return v ? "true"s : "false"s; },
+        [](const Number &n) {
+            if (std::holds_alternative<double>(n)) {
+                return std::to_string(std::get<double>(n));
+            } else {
+                return std::to_string(std::get<long long>(n));
+            }
+        },
+        [](std::monostate) { return "nil"s; },
+        [](const Object &v) {
+            auto obj = "{"s;
+            for (const auto &[k, v] : v) {
+                obj += std::format("[\"{}\"] = {}, ", k, v->to_lua_table());
+            }
+            if (obj.size() > 1) {
+                obj.resize(obj.size() - 2); // remove last comma and space
+            }
+            obj += "}";
+            return obj;
+        },
+        [](const Array &v) {
+            auto arr = "{"s;
+            for (const auto &v : v) {
+                arr += std::format("{}, ", v->to_lua_table());
+            }
+            if (arr.size() > 1) {
+                arr.resize(arr.size() - 2);
+            }
+            arr += "}";
+            return arr;
+        },
+        [](const auto &x) { throw std::runtime_error(std::format("Unknown node of type {}", typeid(x).name())); }
     );
 }

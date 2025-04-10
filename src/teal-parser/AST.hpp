@@ -137,6 +137,7 @@ namespace teal::parser::ast
 
 
             std::string to_json();
+            std::string to_lua_table();
         };
     }
 
@@ -160,6 +161,10 @@ namespace teal::parser::ast
         virtual ~ASTNode() = default;
 
         virtual serialisation::Object serialise() const;
+
+        template<typename T> requires std::is_base_of_v<ASTNode, T>
+        constexpr inline bool is() const
+        { return dynamic_cast<const T *>(this) != nullptr; }
     };
     struct Expression : ASTNode {
         Expression(const Token &tk):
@@ -167,6 +172,10 @@ namespace teal::parser::ast
         {}
 
         virtual ~Expression() = default;
+
+        template<typename T> requires std::is_base_of_v<Expression, T>
+        constexpr inline bool is() const
+        { return dynamic_cast<const T *>(this) != nullptr; }
     };
     struct Statement : ASTNode {
         Statement(const Token &tk):
@@ -174,6 +183,11 @@ namespace teal::parser::ast
         {}
 
         virtual ~Statement() = default;
+
+
+        template<typename T> requires std::is_base_of_v<Statement, T>
+        constexpr inline bool is() const
+        { return dynamic_cast<const T *>(this) != nullptr; }
     };
 
     // Expression AST nodes
@@ -265,6 +279,10 @@ namespace teal::parser::ast
     struct TypeNode : ASTNode {
         TypeNode(const Token &tk): ASTNode(tk) {}
         virtual ~TypeNode() = default;
+
+        template<typename T> requires std::is_base_of_v<TypeNode, T>
+        constexpr inline bool is() const
+        { return dynamic_cast<const T *>(this) != nullptr; }
     };
 
     struct Block : ASTNode {

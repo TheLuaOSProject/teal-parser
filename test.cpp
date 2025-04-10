@@ -17,13 +17,27 @@ bool __is_posix_terminal(FILE *f)
 
 _LIBCPP_END_NAMESPACE_STD
 
-int main()
-{
-    // auto mem = std::pmr::monotonic_buffer_resource(DEFAULT_SIZE);
+int main(int argc, char *argv[])
+{   std::string src = TL_SRC;
+    if (argc > 1) {
+        auto f = std::fopen(argv[1], "r");
+        if (f == nullptr) {
+            std::println(stderr, "Failed to open `{}`", argv[1]);
+            return 1;
+        }
 
-    // auto alloc = std::pmr::polymorphic_allocator(&mem);
-    // auto lexer = teal::parser::Lexer(TL_SRC, alloc);
-    auto lexer = teal::parser::Lexer(TL_SRC);
+        std::fseek(f, 0, SEEK_END);
+
+        auto len = std::ftell(f);
+        std::fseek(f, 0, SEEK_SET);
+        src.resize(len);
+        std::fread(src.data(), 1, len, f);
+        std::fclose(f);
+        std::println("Read {} bytes from {}", len, argv[1]);
+    }
+
+
+    auto lexer = teal::parser::Lexer(src);
 
     auto start = std::chrono::steady_clock::now();
     auto [tks, errs] = lexer.tokenize();
@@ -81,8 +95,22 @@ int main()
         std::println(stderr, "Failed to open AST.json");
         return 0;;
     }
-
     std::fwrite(json.data(), 1, json.size(), f);
+    std::fclose(f);
 
+
+    start = std::chrono::steady_clock::now();
+    auto lua = obj->to_lua_table();
+    end = std::chrono::steady_clock::now();
+    len = to_ms(end - start);
+    std::println("Lua took {}", len);
+
+    f = std::fopen("AST.lua", "w+b");
+    if (f == nullptr) {
+        std::println(stderr, "Failed to open AST.lua");
+        return 0;;
+    }
+
+    std::print(f, "return {}", lua);
     std::fclose(f);
 }
