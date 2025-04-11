@@ -68,13 +68,13 @@ private:
         }
         return false;
     }
-    constexpr inline void push_error(const std::string_view& msg, bool nothrow = false) {
+    constexpr inline void push_error(const std::string_view &msg, bool nothrow = false) {
         _errors.push_back({ std::string(msg), peek_token().line, peek_token().col });
         if (_errors.size() >= max_errors and not nothrow)
             throw StopParsingException{};
     }
 #define $push_error(msg, ...) push_error(std::format("<{}:{}> {}", std::source_location::current().file_name(), std::source_location::current().line(), msg) __VA_OPT__(,) __VA_ARGS__)
-    std::optional<Token> consume(TokenType t, const std::string_view& err_msg) {
+    std::optional<Token> consume(TokenType t, const std::string_view &err_msg) {
         if (check(t)) {
             Token tok = peek_token();
             _pos++;

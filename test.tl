@@ -1,8 +1,5 @@
-local record Point
-    x: integer
-    y: integer
+local function say_hi(to: string)
+    print("hi " .. to)
 end
 
-local p: Point = { x = 1, y = 2 }
-
-p.x = 3.21
+say_hi(nil)

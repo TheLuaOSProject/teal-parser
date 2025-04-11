@@ -101,17 +101,17 @@ int main(int argc, char *argv[])
     std::fwrite(json.data(), 1, json.size(), f);
     std::fclose(f);
 
-    auto tycheck = teal::parser::typecheck::TypeChecker();
+    auto errcollector = teal::parser::typechecker::ErrorCollector();
+    auto tycheck = teal::parser::typechecker::TypeChecker(errcollector);
     start = std::chrono::steady_clock::now();
     tycheck.check(root.get());
     end = std::chrono::steady_clock::now();
     len = to_ms(end - start);
     std::println("Type checking took {}", len);
 
-    auto terrs = tycheck.getErrorReporter().getErrors();
-    if (terrs.size() > 0) {
+    if (errcollector.hasErrors()) {
         std::println(stderr, "Type checking errors:");
-        for (auto err : terrs) {
+        for (auto err : errcollector.getErrors()) {
             std::println("    - {} ({}:{}:{})", err.message, filename, err.line, err.column);
         }
         return 1;

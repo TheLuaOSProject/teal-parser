@@ -10,15 +10,15 @@ using namespace teal::parser::ast;
 template<>
 struct std::formatter<Token> {
     constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
-    constexpr auto format(const Token &tk, std::format_context& ctx) const {
+    constexpr auto format(const Token &tk, std::format_context &ctx) const {
         return std::format_to(ctx.out(), "Token {{.kind=\"{}\", .at={}:{}}}", tk.to_string(), tk.line, tk.col);
     }
 };
 
 template<>
 struct std::formatter<TokenType> {
-    constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-    constexpr auto format(const TokenType &tk, std::format_context& ctx) const {
+    constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
+    constexpr auto format(const TokenType &tk, std::format_context &ctx) const {
         return std::format_to(ctx.out(), "{}", Token::type_to_string(tk));
     }
 };
@@ -898,7 +898,7 @@ std::unique_ptr<TypeNode> Parser::parse_type() {
     return first_type;
 }
 
-constexpr inline bool is_primitive(const std::string_view& name) {
+constexpr inline bool is_primitive(const std::string_view &name) {
     return name == "string" or name == "integer" or name == "number" or name == "boolean" or name == "nil";
 }
 
