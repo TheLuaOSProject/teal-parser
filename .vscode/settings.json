@@ -3,5 +3,8 @@
     "explorer.fileNesting.patterns": {
         "*.hpp": "${capture}.cpp",
     },
-    "explorer.fileNesting.enabled": true
+    "explorer.fileNesting.enabled": true,
+    "yaml.schemas": {
+        "https://json.schemastore.org/clang-tidy.json": "file:///Users/frityet/Projects/teal-parser-test/.clang-tidy"
+    }
 }

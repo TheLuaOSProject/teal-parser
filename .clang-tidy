@@ -1,0 +1,21 @@
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  misc-*,
+  modernize-*,
+  portability-*
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: false
+FormatStyle: none
+CheckOptions:
+  - key: readability-braces-around-statements.ShortStatementLines
+    value: '0'
+  - key: readability-function-size.LineThreshold
+    value: '0'
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '0'

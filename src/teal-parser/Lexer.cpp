@@ -12,8 +12,7 @@ static std::vector<std::string> split(const std::string &i, const std::string_vi
     std::vector<std::string> ts;
     int s = 0;
     size_t e = i.find(d);
-    while (e != std::string::npos)
-    {
+    while (e != std::string::npos) {
         ts.push_back(i.substr(s, e - s));
         s = e + 1;
         e = i.find(d, s);
@@ -32,15 +31,10 @@ std::expected<Token, Lexer::Error> Lexer::lex()
     if (pos >= length) return std::unexpected(make_error(Overflow {}));
     int tok_line = line;
     int tok_col = col;
-    if (c == '\"' or c == '\'' or (c == '[' and (peek(1) == '[' or peek(1) == '='))) {
-        return read_string();
-    }
-    if (std::isdigit(c)) {
-        return read_number();
-    }
-    if (std::isalpha(c) or c == '_') {
-        return read_name();
-    }
+    if (c == '\"' or c == '\'' or (c == '[' and (peek(1) == '[' or peek(1) == '='))) return read_string();
+
+    if (std::isdigit(c)) return read_number();
+    if (std::isalpha(c) or c == '_') return read_name();
     switch (c) {
     case '.':
         consume();
@@ -49,28 +43,23 @@ std::expected<Token, Lexer::Error> Lexer::lex()
             if (peek() == '.') {
                 consume();
                 return Token { TokenType::VAR_ARG, "...", tok_line, tok_col };
-            } else {
-                return Token { TokenType::CONCAT, "..", tok_line, tok_col };
-            }
-        } else {
-            return Token { TokenType::DOT, ".", tok_line, tok_col };
-        }
+            } else return Token { TokenType::CONCAT, "..", tok_line, tok_col };
+        } else return Token { TokenType::DOT, ".", tok_line, tok_col };
+
     case '=':
         consume();
         if (peek() == '=') {
             consume();
             return Token { TokenType::EQUALS, "==", tok_line, tok_col };
-        } else {
-            return Token { TokenType::ASSIGN, "=", tok_line, tok_col };
-        }
+        } else return Token { TokenType::ASSIGN, "=", tok_line, tok_col };
+
     case '~':
         consume();
         if (peek() == '=') {
             consume();
             return Token { TokenType::NOT_EQ, "~=", tok_line, tok_col };
-        } else {
-            return Token { TokenType::BIT_XOR, "~", tok_line, tok_col };
-        }
+        } else return Token { TokenType::BIT_XOR, "~", tok_line, tok_col };
+
     case '<':
         consume();
         if (peek() == '=') {
@@ -79,9 +68,8 @@ std::expected<Token, Lexer::Error> Lexer::lex()
         } else if (peek() == '<') {
             consume();
             return Token { TokenType::SHIFT_L, "<<", tok_line, tok_col };
-        } else {
-            return Token { TokenType::LESS, "<", tok_line, tok_col };
-        }
+        } else return Token { TokenType::LESS, "<", tok_line, tok_col };
+
     case '>':
         consume();
         if (peek() == '=') {
@@ -90,17 +78,15 @@ std::expected<Token, Lexer::Error> Lexer::lex()
         } else if (peek() == '>') {
             consume();
             return Token { TokenType::SHIFT_R, ">>", tok_line, tok_col };
-        } else {
-            return Token { TokenType::GREATER, ">", tok_line, tok_col };
-        }
+        } else return Token { TokenType::GREATER, ">", tok_line, tok_col };
+
     case ':':
         consume();
         if (peek() == ':') {
             consume();
             return Token { TokenType::DOUBLE_COLON, "::", tok_line, tok_col };
-        } else {
-            return Token { TokenType::COLON, ":", tok_line, tok_col };
-        }
+        } else return Token { TokenType::COLON, ":", tok_line, tok_col };
+
     case '(':
         consume();
         return Token { TokenType::L_PAREN, "(", tok_line, tok_col };
@@ -129,9 +115,8 @@ std::expected<Token, Lexer::Error> Lexer::lex()
         consume();
         return Token { TokenType::ADD, "+", tok_line, tok_col };
     case '-':
-        if (skip_comment()) {
-            return lex();
-        } else {
+        if (skip_comment()) return lex();
+        else {
             consume();
             return Token { TokenType::SUB, "-", tok_line, tok_col };
         }
@@ -143,9 +128,8 @@ std::expected<Token, Lexer::Error> Lexer::lex()
         if (peek() == '/') {
             consume();
             return Token { TokenType::FLOOR_DIV, "//", tok_line, tok_col };
-        } else {
-            return Token { TokenType::DIV, "/", tok_line, tok_col };
-        }
+        } else return Token { TokenType::DIV, "/", tok_line, tok_col };
+
     case '%':
         consume();
         return Token { TokenType::MOD, "%", tok_line, tok_col };
@@ -162,13 +146,14 @@ std::expected<Token, Lexer::Error> Lexer::lex()
         consume();
         return Token { TokenType::BIT_OR, "|", tok_line, tok_col };
     default:
-        char invalidTk = c;
+        char invalid = c;
         consume();
-        return std::unexpected(make_error(InvalidCharacter { invalidTk }));
+        return std::unexpected(make_error(InvalidCharacter { invalid }));
     }
 }
 
-std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize() {
+std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize()
+{
     auto lines = split(src, "\n");
     while (true) {
         if (std::expected<Token, Error> val = lex()) {
@@ -188,7 +173,8 @@ std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize() {
     return { tokens, errors };
 }
 
-void Lexer::Tests::basic_keyword() {
+void Lexer::Tests::basic_keyword()
+{
     std::string input = "nil";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -199,7 +185,8 @@ void Lexer::Tests::basic_keyword() {
     std::cout << "testBasicKeyword passed.\n";
 }
 
-void Lexer::Tests::numbers() {
+void Lexer::Tests::numbers()
+{
     std::string input = "123 456.789 0x1aF";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -213,7 +200,8 @@ void Lexer::Tests::numbers() {
     std::cout << "testNumbers passed.\n";
 }
 
-void Lexer::Tests::strings() {
+void Lexer::Tests::strings()
+{
     std::string input = "'hello' \"world\"";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -225,7 +213,8 @@ void Lexer::Tests::strings() {
     std::cout << "testStrings passed.\n";
 }
 
-void Lexer::Tests::long_string() {
+void Lexer::Tests::long_string()
+{
     std::string input = "[[Hello\nWorld]]";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -235,7 +224,8 @@ void Lexer::Tests::long_string() {
     std::cout << "testLongString passed.\n";
 }
 
-void Lexer::Tests::long_comment() {
+void Lexer::Tests::long_comment()
+{
     std::string input = "--[==[This is a long comment]==]\n123";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -246,7 +236,8 @@ void Lexer::Tests::long_comment() {
     std::cout << "testLongComment passed.\n";
 }
 
-void Lexer::Tests::mixed_tokens() {
+void Lexer::Tests::mixed_tokens()
+{
     std::string input = "if x == 10 then return x else return 0 end";
     Lexer lexer(input);
     auto [tokens, errors] = lexer.tokenize();
@@ -258,7 +249,8 @@ void Lexer::Tests::mixed_tokens() {
     std::cout << "testMixedTokens passed.\n";
 }
 
-void Lexer::Tests::unterminated_string() {
+void Lexer::Tests::unterminated_string()
+{
 
 #if not defined(NDEBUG)
     std::string input = "\"unterminated string";
@@ -278,7 +270,8 @@ void Lexer::Tests::unterminated_string() {
 #endif
 }
 
-void Lexer::Tests::invalid_long_string_delimiter() {
+void Lexer::Tests::invalid_long_string_delimiter()
+{
 #if not defined(NDEBUG)
     std::string input = "[=[Invalid long string";
     Lexer lexer(input);

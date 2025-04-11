@@ -1,29 +1,32 @@
 #include "Parser.hpp"
 #include "AST.hpp"
 #include "Lexer.hpp"
-#include <format>
 #include <cassert>
+#include <format>
 
 using namespace teal::parser;
 using namespace teal::parser::ast;
 
-template<>
+template <>
 struct std::formatter<Token> {
     constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
-    constexpr auto format(const Token &tk, std::format_context& ctx) const {
+    constexpr auto format(const Token &tk, std::format_context &ctx) const
+    {
         return std::format_to(ctx.out(), "Token {{.kind=\"{}\", .at={}:{}}}", tk.to_string(), tk.line, tk.col);
     }
 };
 
-template<>
+template <>
 struct std::formatter<TokenType> {
-    constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
-    constexpr auto format(const TokenType &tk, std::format_context& ctx) const {
+    constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
+    constexpr auto format(const TokenType &tk, std::format_context &ctx) const
+    {
         return std::format_to(ctx.out(), "{}", Token::type_to_string(tk));
     }
 };
 
-std::unique_ptr<Block> Parser::parse_chunk() {
+std::unique_ptr<Block> Parser::parse_chunk()
+{
     auto block = make_node<Block>();
     while (not is_at_end()) {
         if (check(TokenType::END_OF_FILE)) break;
@@ -33,18 +36,22 @@ std::unique_ptr<Block> Parser::parse_chunk() {
     return block;
 }
 
-std::unique_ptr<Statement> Parser::parse_stat() {
-    if (match(TokenType::SEMICOLON)) {
-        return nullptr;
-    }
+std::unique_ptr<Statement> Parser::parse_stat()
+{
+    if (match(TokenType::SEMICOLON)) { return nullptr; }
     TokenType t = peek_token().type;
     Visibility vis;
     switch (t) {
-    case TokenType::IF: return parse_if();
-    case TokenType::WHILE: return parse_while();
-    case TokenType::REPEAT: return parse_repeat();
-    case TokenType::FOR: return parse_for();
-    case TokenType::DO: return parse_do();
+    case TokenType::IF:
+        return parse_if();
+    case TokenType::WHILE:
+        return parse_while();
+    case TokenType::REPEAT:
+        return parse_repeat();
+    case TokenType::FOR:
+        return parse_for();
+    case TokenType::DO:
+        return parse_do();
     case TokenType::FUNCTION:
         _pos++;
         return parse_function_decl(Visibility::NONE);
@@ -76,7 +83,8 @@ std::unique_ptr<Statement> Parser::parse_stat() {
     case TokenType::RETURN: {
         _pos++;
         auto ret_stmt = make_node<ReturnStatement>();
-        if (not check(TokenType::SEMICOLON) and not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not check(TokenType::UNTIL) and not check(TokenType::END_OF_FILE)) {
+        if (not check(TokenType::SEMICOLON) and not check(TokenType::END) and not check(TokenType::ELSE)
+            and not check(TokenType::ELSEIF) and not check(TokenType::UNTIL) and not check(TokenType::END_OF_FILE)) {
             ret_stmt->values = parse_expression_list();
         }
         match(TokenType::SEMICOLON);
@@ -102,14 +110,15 @@ std::unique_ptr<Statement> Parser::parse_stat() {
     }
 }
 
-std::unique_ptr<Statement> Parser::parse_assignment_or_call() {
+std::unique_ptr<Statement> Parser::parse_assignment_or_call()
+{
     auto prefix = parse_prefix_expression();
     if (not prefix) {
         skip_to_next_statement();
         return nullptr;
     }
     if (check(TokenType::ASSIGN) or check(TokenType::COMMA)) {
-        if (dynamic_cast<FunctionCallExpression*>(prefix.get())) {
+        if (dynamic_cast<FunctionCallExpression *>(prefix.get())) {
             $push_error("cannot assign to function call");
             prefix = make_node<NameExpression>("_error_");
         }
@@ -119,30 +128,32 @@ std::unique_ptr<Statement> Parser::parse_assignment_or_call() {
             auto var = parse_var_expression();
             if (not var) {
                 $push_error("expected variable");
-                if (check(TokenType::COMMA)) { _pos++; continue; }
+                if (check(TokenType::COMMA)) {
+                    _pos++;
+                    continue;
+                }
                 break;
             }
             assign->left.push_back(std::move(var));
         }
         $consume(TokenType::ASSIGN, "expected '=' in assignment");
         assign->right = parse_expression_list();
-        if (assign->right.empty()) {
-            $push_error("expected expression after '='");
-        }
+        if (assign->right.empty()) { $push_error("expected expression after '='"); }
         return assign;
     } else {
-        auto call_expression = dynamic_cast<FunctionCallExpression*>(prefix.get());
+        auto call_expression = dynamic_cast<FunctionCallExpression *>(prefix.get());
         if (not call_expression) {
             $push_error("unexpected expression statement");
             skip_to_next_statement();
             return nullptr;
         }
-        std::unique_ptr<FunctionCallExpression> call_node(static_cast<FunctionCallExpression*>(prefix.release()));
+        std::unique_ptr<FunctionCallExpression> call_node(static_cast<FunctionCallExpression *>(prefix.release()));
         return make_node<CallStatement>(std::move(call_node));
     }
 }
 
-std::unique_ptr<Statement> Parser::parse_label() {
+std::unique_ptr<Statement> Parser::parse_label()
+{
     $consume(TokenType::DOUBLE_COLON, "internal error: '::' expected for label");
     if (not check(TokenType::NAME)) {
         $push_error("expected label name after '::'");
@@ -154,33 +165,34 @@ std::unique_ptr<Statement> Parser::parse_label() {
     return make_node<LabelStatement>(std::move(name));
 }
 
-std::unique_ptr<Statement> Parser::parse_if() {
+std::unique_ptr<Statement> Parser::parse_if()
+{
     $consume(TokenType::IF, "internal error: 'if' expected");
     auto if_stmt = make_node<IfStatement>();
     auto cond = parse_expression();
-    if (not cond) {
-        $push_error("expected condition after 'if'");
-    }
+    if (not cond) { $push_error("expected condition after 'if'"); }
     $consume(TokenType::THEN, "expected 'then' after condition");
     auto then_block = make_node<Block>();
-    while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not is_at_end()) {
+    while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not is_at_end()
+    ) {
         auto st = parse_stat();
         if (st) then_block->statements.push_back(std::move(st));
-        if (check(TokenType::END) or check(TokenType::ELSE) or check(TokenType::ELSEIF) or check(TokenType::UNTIL) or check(TokenType::END_OF_FILE))
+        if (check(TokenType::END) or check(TokenType::ELSE) or check(TokenType::ELSEIF) or check(TokenType::UNTIL)
+            or check(TokenType::END_OF_FILE))
             break;
     }
     if_stmt->if_branches.push_back({ std::move(cond), std::move(then_block) });
     while (match(TokenType::ELSEIF)) {
         auto elseif_cond = parse_expression();
-        if (not elseif_cond) {
-            $push_error("expected condition after 'elseif'");
-        }
+        if (not elseif_cond) { $push_error("expected condition after 'elseif'"); }
         $consume(TokenType::THEN, "expected 'then' after condition");
         auto elseif_block = make_node<Block>();
-        while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not is_at_end()) {
+        while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF)
+               and not is_at_end()) {
             auto st = parse_stat();
             if (st) elseif_block->statements.push_back(std::move(st));
-            if (check(TokenType::END) or check(TokenType::ELSE) or check(TokenType::ELSEIF) or check(TokenType::UNTIL) or check(TokenType::END_OF_FILE))
+            if (check(TokenType::END) or check(TokenType::ELSE) or check(TokenType::ELSEIF) or check(TokenType::UNTIL)
+                or check(TokenType::END_OF_FILE))
                 break;
         }
         if_stmt->if_branches.push_back({ std::move(elseif_cond), std::move(elseif_block) });
@@ -190,8 +202,7 @@ std::unique_ptr<Statement> Parser::parse_if() {
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) else_block->statements.push_back(std::move(st));
-            if (check(TokenType::END) or check(TokenType::UNTIL) or check(TokenType::END_OF_FILE))
-                break;
+            if (check(TokenType::END) or check(TokenType::UNTIL) or check(TokenType::END_OF_FILE)) break;
         }
         if_stmt->else_block = std::move(else_block);
     }
@@ -199,46 +210,43 @@ std::unique_ptr<Statement> Parser::parse_if() {
     return if_stmt;
 }
 
-std::unique_ptr<Statement> Parser::parse_while() {
+std::unique_ptr<Statement> Parser::parse_while()
+{
     $consume(TokenType::WHILE, "internal error: 'while' expected");
     auto while_stmt = make_node<WhileStatement>();
     while_stmt->condition = parse_expression();
-    if (not while_stmt->condition) {
-        $push_error("expected condition after 'while'");
-    }
+    if (not while_stmt->condition) { $push_error("expected condition after 'while'"); }
     $consume(TokenType::DO, "expected 'do' after condition");
     auto body_block = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
-        if (check(TokenType::END) or check(TokenType::UNTIL) or check(TokenType::END_OF_FILE))
-            break;
+        if (check(TokenType::END) or check(TokenType::UNTIL) or check(TokenType::END_OF_FILE)) break;
     }
     $consume(TokenType::END, "expected 'end' to close 'while'");
     while_stmt->body = std::move(body_block);
     return while_stmt;
 }
 
-std::unique_ptr<Statement> Parser::parse_repeat() {
+std::unique_ptr<Statement> Parser::parse_repeat()
+{
     $consume(TokenType::REPEAT, "internal error: 'repeat' expected");
     auto repeat_stmt = make_node<RepeatStatement>();
     auto body_block = make_node<Block>();
     while (not check(TokenType::UNTIL) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
-        if (check(TokenType::UNTIL) or check(TokenType::END_OF_FILE))
-            break;
+        if (check(TokenType::UNTIL) or check(TokenType::END_OF_FILE)) break;
     }
     $consume(TokenType::UNTIL, "expected 'until' after 'repeat' block");
     repeat_stmt->body = std::move(body_block);
     repeat_stmt->condition = parse_expression();
-    if (not repeat_stmt->condition) {
-        $push_error("expected condition after 'until'");
-    }
+    if (not repeat_stmt->condition) { $push_error("expected condition after 'until'"); }
     return repeat_stmt;
 }
 
-std::unique_ptr<Statement> Parser::parse_for() {
+std::unique_ptr<Statement> Parser::parse_for()
+{
     $consume(TokenType::FOR, "internal error: 'for' expected");
     if (not check(TokenType::NAME)) {
         $push_error("expected identifier after 'for'");
@@ -253,16 +261,13 @@ std::unique_ptr<Statement> Parser::parse_for() {
         for_num->expressions.start = parse_expression();
         $consume(TokenType::COMMA, "expected ',' after start value");
         for_num->expressions.end = parse_expression();
-        if (match(TokenType::COMMA)) {
-            for_num->expressions.step = parse_expression();
-        }
+        if (match(TokenType::COMMA)) { for_num->expressions.step = parse_expression(); }
         $consume(TokenType::DO, "expected 'do' in numeric for");
         auto body_block = make_node<Block>();
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) body_block->statements.push_back(std::move(st));
-            if (check(TokenType::END) or check(TokenType::END_OF_FILE))
-                break;
+            if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
         }
         $consume(TokenType::END, "expected 'end' to close 'for'");
         for_num->body = std::move(body_block);
@@ -285,8 +290,7 @@ std::unique_ptr<Statement> Parser::parse_for() {
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) body_block->statements.push_back(std::move(st));
-            if (check(TokenType::END) or check(TokenType::END_OF_FILE))
-                break;
+            if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
         }
         $consume(TokenType::END, "expected 'end' to close 'for'");
         auto for_in = make_node<ForInStatement>();
@@ -297,23 +301,22 @@ std::unique_ptr<Statement> Parser::parse_for() {
     }
 }
 
-std::unique_ptr<Statement> Parser::parse_do() {
+std::unique_ptr<Statement> Parser::parse_do()
+{
     $consume(TokenType::DO, "internal error: 'do' expected");
     auto block_node = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) block_node->statements.push_back(std::move(st));
-        if (check(TokenType::END) or check(TokenType::END_OF_FILE))
-            break;
+        if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
     }
     $consume(TokenType::END, "expected 'end' to close 'do' block");
     return make_node<DoStatement>(std::move(block_node));
 }
 
-std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_macroexp) {
-    if (not check(TokenType::NAME)) {
-        $push_error("expected function name after 'function'");
-    }
+std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_macroexp)
+{
+    if (not check(TokenType::NAME)) { $push_error("expected function name after 'function'"); }
     std::vector<std::string> name_path;
     std::string method_name;
     bool is_method = false;
@@ -346,23 +349,19 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
     } else {
         if (check(TokenType::DOT) or check(TokenType::COLON)) {
             $push_error("macroexps are not allowed to be members");
-            while (match(TokenType::DOT) or match(TokenType::COLON)) ;
+            while (match(TokenType::DOT) or match(TokenType::COLON));
             // return nullptr;
         }
     }
     auto func_body = make_node<FunctionBody>();
-    if (match(TokenType::LESS)) {
-        parse_generic_list(&func_body->type_parameters);
-    }
+    if (match(TokenType::LESS)) { parse_generic_list(&func_body->type_parameters); }
     $consume(TokenType::L_PAREN, "expected '(' after function name");
     if (not check(TokenType::R_PAREN)) {
         while (true) {
             if (check(TokenType::VAR_ARG)) {
                 _pos++;
                 std::unique_ptr<TypeNode> var_type;
-                if (match(TokenType::COLON)) {
-                    var_type = parse_type();
-                }
+                if (match(TokenType::COLON)) { var_type = parse_type(); }
                 func_body->parameters.push_back({ "...", true, false, std::move(var_type) });
                 break;
             }
@@ -376,9 +375,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
                 bool opt_flag = false;
                 if (match(TokenType::QUESTION)) opt_flag = true;
                 std::unique_ptr<TypeNode> type_ann;
-                if (match(TokenType::COLON)) {
-                    type_ann = parse_type();
-                }
+                if (match(TokenType::COLON)) { type_ann = parse_type(); }
                 func_body->parameters.push_back({ param_name, false, opt_flag, std::move(type_ann) });
             }
             if (not match(TokenType::COMMA)) break;
@@ -394,8 +391,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
-        if (check(TokenType::END) or check(TokenType::END_OF_FILE))
-            break;
+        if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
     }
     $consume(TokenType::END, "expected 'end' to close function");
     func_body->body = std::move(body_block);
@@ -408,19 +404,14 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
     return func_decl;
 }
 
-std::unique_ptr<Statement> Parser::parse_var_decl(Visibility vis) {
+std::unique_ptr<Statement> Parser::parse_var_decl(Visibility vis)
+{
     auto var_stmt = make_node<VariableDeclarationStatement>(vis);
     auto names = parse_att_name_list();
-    if (names.empty()) {
-        $push_error("expected variable name");
-    }
+    if (names.empty()) { $push_error("expected variable name"); }
     var_stmt->names = std::move(names);
-    if (match(TokenType::COLON)) {
-        var_stmt->types = parse_type_list();
-    }
-    if (match(TokenType::ASSIGN)) {
-        var_stmt->values = parse_expression_list();
-    }
+    if (match(TokenType::COLON)) { var_stmt->types = parse_type_list(); }
+    if (match(TokenType::ASSIGN)) { var_stmt->values = parse_expression_list(); }
     if (vis == Visibility::NONE) {
         if (var_stmt->types.empty() and var_stmt->values.empty()) {
             $push_error("global variable must have type or initial value");
@@ -429,9 +420,12 @@ std::unique_ptr<Statement> Parser::parse_var_decl(Visibility vis) {
     return var_stmt;
 }
 
-std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_interface) {
+std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_interface)
+{
     if (not check(TokenType::NAME)) {
-        $push_error(std::format("expected name after `{}` got {}", is_interface ? "interface" : "record", peek_token()));
+        $push_error(
+            std::format("expected name after `{}` got {}", is_interface ? "interface" : "record", peek_token())
+        );
         return nullptr;
     }
     std::string name = peek_token().text;
@@ -440,7 +434,8 @@ std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_int
     return make_node<RecordDeclarationStatement>(is_interface, vis, std::move(name), std::move(body));
 }
 
-std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis) {
+std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis)
+{
     if (not check(TokenType::NAME)) {
         $push_error("expected name after 'enum'");
         return nullptr;
@@ -451,7 +446,8 @@ std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis) {
     return make_node<EnumDeclarationStatement>(vis, std::move(name), std::move(body));
 }
 
-std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
+std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis)
+{
     if (not check(TokenType::NAME)) {
         $push_error("expected name after 'type'");
         return nullptr;
@@ -460,9 +456,7 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
     _pos++;
     std::unique_ptr<TypeNode> type_value;
     std::vector<GenericTypeParameter> type_args;
-    if (match(TokenType::LESS)) {
-        parse_generic_list(&type_args);
-    }
+    if (match(TokenType::LESS)) { parse_generic_list(&type_args); }
 
     if (match(TokenType::ASSIGN)) {
         if (check(TokenType::RECORD)) {
@@ -475,18 +469,15 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis) {
             type_value = parse_type();
         }
     } else {
-        if (vis == Visibility::LOCAL) {
-            $push_error("expected '=' in local type alias");
-        }
+        if (vis == Visibility::LOCAL) { $push_error("expected '=' in local type alias"); }
     }
     return make_node<TypeAliasStatement>(vis, std::move(name), std::move(type_args), std::move(type_value));
 }
 
-std::vector<VariableDeclarationStatement::Name> Parser::parse_att_name_list() {
+std::vector<VariableDeclarationStatement::Name> Parser::parse_att_name_list()
+{
     std::vector<VariableDeclarationStatement::Name> list;
-    if (not check(TokenType::NAME)) {
-        return list;
-    }
+    if (not check(TokenType::NAME)) { return list; }
     do {
         VariableDeclarationStatement::Name na;
         na.name = peek_token().text;
@@ -505,11 +496,10 @@ std::vector<VariableDeclarationStatement::Name> Parser::parse_att_name_list() {
     return list;
 }
 
-std::vector<std::string> Parser::parse_name_list() {
+std::vector<std::string> Parser::parse_name_list()
+{
     std::vector<std::string> list;
-    if (not check(TokenType::NAME)) {
-        return list;
-    }
+    if (not check(TokenType::NAME)) { return list; }
     list.push_back(peek_token().text);
     _pos++;
     while (match(TokenType::COMMA)) {
@@ -523,11 +513,10 @@ std::vector<std::string> Parser::parse_name_list() {
     return list;
 }
 
-std::unique_ptr<Expression> Parser::parse_expression() {
-    return parse_exp_rec(1);
-}
+std::unique_ptr<Expression> Parser::parse_expression() { return parse_exp_rec(1); }
 
-std::vector<std::unique_ptr<Expression>> Parser::parse_expression_list() {
+std::vector<std::unique_ptr<Expression>> Parser::parse_expression_list()
+{
     std::vector<std::unique_ptr<Expression>> exprs;
     auto first = parse_expression();
     if (first) exprs.push_back(std::move(first));
@@ -543,14 +532,16 @@ std::vector<std::unique_ptr<Expression>> Parser::parse_expression_list() {
     return exprs;
 }
 
-std::unique_ptr<Expression> Parser::parse_prefix_expression() {
+std::unique_ptr<Expression> Parser::parse_prefix_expression()
+{
     std::unique_ptr<Expression> base;
     if (match(TokenType::L_PAREN)) {
         base = parse_expression();
         $consume(TokenType::R_PAREN, "expected ')'");
     } else if (check(TokenType::NAME)) {
         auto s = peek_token().text;
-        base = make_node<NameExpression>(std::move(s)); //specialisation of std::move for string makes it const qualified. Why? because fuck you
+        base = make_node<NameExpression>(std::move(s)
+        ); // specialisation of std::move for string makes it const qualified. Why? because fuck you
         _pos++;
     } else {
         $push_error(std::format("expected '(' or Name, got {}", peek_token()));
@@ -566,9 +557,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
             _pos++;
             std::vector<std::unique_ptr<Expression>> args;
             if (match(TokenType::L_PAREN)) {
-                if (not check(TokenType::R_PAREN)) {
-                    args = parse_expression_list();
-                }
+                if (not check(TokenType::R_PAREN)) { args = parse_expression_list(); }
                 $consume(TokenType::R_PAREN, "expected ')' after arguments");
             } else if (check(TokenType::L_BRACE)) {
                 args.push_back(parse_table_constructor());
@@ -584,9 +573,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
             base = std::move(call);
         } else if (match(TokenType::L_PAREN)) {
             std::vector<std::unique_ptr<Expression>> args;
-            if (not check(TokenType::R_PAREN)) {
-                args = parse_expression_list();
-            }
+            if (not check(TokenType::R_PAREN)) { args = parse_expression_list(); }
             $consume(TokenType::R_PAREN, "expected ')'");
             auto call = make_node<FunctionCallExpression>(std::move(base), "");
             for (auto &arg : args) call->arguments.push_back(std::move(arg));
@@ -609,11 +596,25 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
                     return Token { TokenType::NAME, std::string(id), peek_token().line, peek_token().col };
                 };
                 switch (peek_token().type) {
-                case TokenType::TYPE: _tokens[_pos] = mkname("type"); ok = true; break;
-                case TokenType::RECORD: _tokens[_pos] = mkname("record"); ok = true; break;
-                case TokenType::ENUM: _tokens[_pos] = mkname("enum"); ok = true; break;
-                case TokenType::INTERFACE: _tokens[_pos] = mkname("interface"); ok = true; break;
-                default: ok = false; break;
+                case TokenType::TYPE:
+                    _tokens[_pos] = mkname("type");
+                    ok = true;
+                    break;
+                case TokenType::RECORD:
+                    _tokens[_pos] = mkname("record");
+                    ok = true;
+                    break;
+                case TokenType::ENUM:
+                    _tokens[_pos] = mkname("enum");
+                    ok = true;
+                    break;
+                case TokenType::INTERFACE:
+                    _tokens[_pos] = mkname("interface");
+                    ok = true;
+                    break;
+                default:
+                    ok = false;
+                    break;
                 }
                 if (not ok) {
                     $push_error(std::format("expected field name after '.', got `{}`", peek_token().type));
@@ -634,30 +635,48 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression() {
     return base;
 }
 
-std::unique_ptr<Expression> Parser::parse_var_expression() {
+std::unique_ptr<Expression> Parser::parse_var_expression()
+{
     auto expr = parse_prefix_expression();
     if (not expr) return nullptr;
-    if (dynamic_cast<FunctionCallExpression*>(expr.get())) {
+    if (dynamic_cast<FunctionCallExpression *>(expr.get())) {
         $push_error("unexpected function call in assignment");
         return make_node<NameExpression>("_error_");
     }
     return expr;
 }
 
-std::unique_ptr<Expression> Parser::parse_primary_expression() {
+std::unique_ptr<Expression> Parser::parse_primary_expression()
+{
     TokenType t = peek_token().type;
-    if (t == TokenType::NIL) { _pos++; return make_node<NilExpression>(); }
-    if (t == TokenType::TRUE) { _pos++; return make_node<BooleanExpression>(true); }
-    if (t == TokenType::FALSE) { _pos++; return make_node<BooleanExpression>(false); }
-    if (t == TokenType::NUMBER) { std::string num = peek_token().text; _pos++; return make_node<NumberExpression>(std::move(num)); }
-    if (t == TokenType::STRING) { std::string str = peek_token().text; _pos++; return make_node<StringExpression>(std::move(str)); }
-    if (t == TokenType::VAR_ARG) { _pos++; return make_node<VarargExpression>(); }
-    if (t == TokenType::FUNCTION) {
-        return parse_function_def_expression();
+    if (t == TokenType::NIL) {
+        _pos++;
+        return make_node<NilExpression>();
     }
-    if (t == TokenType::L_BRACE) {
-        return parse_table_constructor();
+    if (t == TokenType::TRUE) {
+        _pos++;
+        return make_node<BooleanExpression>(true);
     }
+    if (t == TokenType::FALSE) {
+        _pos++;
+        return make_node<BooleanExpression>(false);
+    }
+    if (t == TokenType::NUMBER) {
+        std::string num = peek_token().text;
+        _pos++;
+        return make_node<NumberExpression>(std::move(num));
+    }
+    if (t == TokenType::STRING) {
+        std::string str = peek_token().text;
+        _pos++;
+        return make_node<StringExpression>(std::move(str));
+    }
+    if (t == TokenType::VAR_ARG) {
+        _pos++;
+        return make_node<VarargExpression>();
+    }
+    if (t == TokenType::FUNCTION) { return parse_function_def_expression(); }
+    if (t == TokenType::L_BRACE) { return parse_table_constructor(); }
     if (t == TokenType::NAME or t == TokenType::L_PAREN or Token::type_is_teal_keyword(t)) {
         return parse_prefix_expression();
     }
@@ -665,7 +684,8 @@ std::unique_ptr<Expression> Parser::parse_primary_expression() {
     return nullptr;
 }
 
-std::unique_ptr<Expression> Parser::parse_exp_rec(int min_prec) {
+std::unique_ptr<Expression> Parser::parse_exp_rec(int min_prec)
+{
     auto left = parse_unary_expression();
     while (true) {
         TokenType type = peek_token().type;
@@ -677,8 +697,7 @@ std::unique_ptr<Expression> Parser::parse_exp_rec(int min_prec) {
             if (match(TokenType::L_PAREN)) {
                 if (not check(TokenType::R_PAREN)) {
                     cast_types = parse_type_list();
-                    if (match(TokenType::VAR_ARG)) {
-                    }
+                    if (match(TokenType::VAR_ARG)) { }
                 }
                 $consume(TokenType::R_PAREN, "expected ')'");
             } else {
@@ -702,33 +721,54 @@ std::unique_ptr<Expression> Parser::parse_exp_rec(int min_prec) {
     return left;
 }
 
-int Parser::get_binary_precedence(TokenType op) {
+int Parser::get_binary_precedence(TokenType op)
+{
     switch (op) {
-    case TokenType::OR: return 1;
-    case TokenType::AND: return 2;
-    case TokenType::IS: return 3;
-    case TokenType::LESS: case TokenType::LESS_EQ:
-    case TokenType::GREATER: case TokenType::GREATER_EQ:
-    case TokenType::EQUALS: case TokenType::NOT_EQ: return 4;
-    case TokenType::BIT_OR: return 5;
-    case TokenType::BIT_XOR: return 6;
-    case TokenType::BIT_AND: return 7;
-    case TokenType::SHIFT_L: case TokenType::SHIFT_R: return 8;
-    case TokenType::CONCAT: return 9;
-    case TokenType::ADD: case TokenType::SUB: return 10;
-    case TokenType::MUL: case TokenType::DIV:
-    case TokenType::FLOOR_DIV: case TokenType::MOD: return 11;
-    case TokenType::POW: return 13;
-    case TokenType::AS: return 14;
-    default: return -1;
+    case TokenType::OR:
+        return 1;
+    case TokenType::AND:
+        return 2;
+    case TokenType::IS:
+        return 3;
+    case TokenType::LESS:
+    case TokenType::LESS_EQ:
+    case TokenType::GREATER:
+    case TokenType::GREATER_EQ:
+    case TokenType::EQUALS:
+    case TokenType::NOT_EQ:
+        return 4;
+    case TokenType::BIT_OR:
+        return 5;
+    case TokenType::BIT_XOR:
+        return 6;
+    case TokenType::BIT_AND:
+        return 7;
+    case TokenType::SHIFT_L:
+    case TokenType::SHIFT_R:
+        return 8;
+    case TokenType::CONCAT:
+        return 9;
+    case TokenType::ADD:
+    case TokenType::SUB:
+        return 10;
+    case TokenType::MUL:
+    case TokenType::DIV:
+    case TokenType::FLOOR_DIV:
+    case TokenType::MOD:
+        return 11;
+    case TokenType::POW:
+        return 13;
+    case TokenType::AS:
+        return 14;
+    default:
+        return -1;
     }
 }
 
-bool Parser::is_right_associative(TokenType op) {
-    return (op == TokenType::CONCAT or op == TokenType::POW);
-}
+bool Parser::is_right_associative(TokenType op) { return (op == TokenType::CONCAT or op == TokenType::POW); }
 
-std::unique_ptr<Expression> Parser::parse_unary_expression() {
+std::unique_ptr<Expression> Parser::parse_unary_expression()
+{
     if (check(TokenType::NOT) or check(TokenType::SUB) or check(TokenType::LENGTH) or check(TokenType::BIT_XOR)) {
         TokenType token = peek_token().type;
         _pos++;
@@ -738,7 +778,8 @@ std::unique_ptr<Expression> Parser::parse_unary_expression() {
     return parse_primary_expression();
 }
 
-bool Parser::parse_generic_list(std::vector<GenericTypeParameter> *t_params) {
+bool Parser::parse_generic_list(std::vector<GenericTypeParameter> *t_params)
+{
     if (not check(TokenType::NAME)) {
         $push_error("expected type parameter name");
         return false;
@@ -746,8 +787,7 @@ bool Parser::parse_generic_list(std::vector<GenericTypeParameter> *t_params) {
     while (check(TokenType::NAME)) {
         GenericTypeParameter param = { peek_token().text, std::nullopt };
         _pos++;
-        if (match(TokenType::IS) and match(TokenType::NAME))
-            param.is = peek_token().text;
+        if (match(TokenType::IS) and match(TokenType::NAME)) param.is = peek_token().text;
         t_params->push_back(param);
         if (not match(TokenType::COMMA)) break;
     }
@@ -776,21 +816,18 @@ bool Parser::parse_typeargs(std::vector<std::unique_ptr<TypeNode>> *types)
     return true;
 }
 
-std::unique_ptr<Expression> Parser::parse_function_def_expression() {
+std::unique_ptr<Expression> Parser::parse_function_def_expression()
+{
     $consume(TokenType::FUNCTION, "internal error: 'function' expected");
     auto func_body = make_node<FunctionBody>();
-    if (match(TokenType::LESS)) {
-        parse_generic_list(&func_body->type_parameters);
-    }
+    if (match(TokenType::LESS)) { parse_generic_list(&func_body->type_parameters); }
     $consume(TokenType::L_PAREN, "expected '(' in function literal");
     if (not check(TokenType::R_PAREN)) {
         while (true) {
             if (check(TokenType::VAR_ARG)) {
                 _pos++;
                 std::unique_ptr<TypeNode> var_type;
-                if (match(TokenType::COLON)) {
-                    var_type = parse_type();
-                }
+                if (match(TokenType::COLON)) { var_type = parse_type(); }
                 func_body->parameters.push_back({ "...", true, false, std::move(var_type) });
                 break;
             }
@@ -804,9 +841,7 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression() {
                 bool opt_flag = false;
                 if (match(TokenType::QUESTION)) opt_flag = true;
                 std::unique_ptr<TypeNode> type_ann;
-                if (match(TokenType::COLON)) {
-                    type_ann = parse_type();
-                }
+                if (match(TokenType::COLON)) { type_ann = parse_type(); }
                 func_body->parameters.push_back({ param_name, false, opt_flag, std::move(type_ann) });
             }
             if (not match(TokenType::COMMA)) break;
@@ -829,7 +864,8 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression() {
     return make_node<FunctionDefinitionExpression>(std::move(func_body));
 }
 
-std::unique_ptr<Expression> Parser::parse_table_constructor() {
+std::unique_ptr<Expression> Parser::parse_table_constructor()
+{
     $consume(TokenType::L_BRACE, "internal error: '{' expected");
     auto table = make_node<TableConstructorExpression>();
     if (not check(TokenType::R_BRACE)) {
@@ -849,16 +885,15 @@ std::unique_ptr<Expression> Parser::parse_table_constructor() {
                 kvp.key = peek_token().text;
 
                 //{ k: string = "test", self:get_value() } are both valid
-                if (_pos + 1 < _tokens.size() and (peek_token(1).type == TokenType::COLON or peek_token(1).type == TokenType::ASSIGN)) {
+                if (_pos + 1 < _tokens.size()
+                    and (peek_token(1).type == TokenType::COLON or peek_token(1).type == TokenType::ASSIGN)) {
                     _pos++;
-                    if (match(TokenType::COLON)) {
-                        kvp.type = parse_type();
-                    }
+                    if (match(TokenType::COLON)) { kvp.type = parse_type(); }
                     $consume(TokenType::ASSIGN, "expected '=' after field name");
                 }
                 kvp.value = parse_expression();
                 field = std::move(kvp);
-            } else { //expression, array part of the table
+            } else { // expression, array part of the table
                 std::unique_ptr<Expression> expr_ptr = parse_expression();
                 field = std::move(expr_ptr);
             }
@@ -874,7 +909,8 @@ std::unique_ptr<Expression> Parser::parse_table_constructor() {
     return table;
 }
 
-std::unique_ptr<TypeNode> Parser::parse_type() {
+std::unique_ptr<TypeNode> Parser::parse_type()
+{
     std::unique_ptr<TypeNode> first_type;
     if (match(TokenType::L_PAREN)) {
         first_type = parse_type();
@@ -882,9 +918,7 @@ std::unique_ptr<TypeNode> Parser::parse_type() {
     } else {
         first_type = parse_base_type();
     }
-    if (not first_type) {
-        first_type = make_node<BasicTypeNode>("nil");
-    }
+    if (not first_type) { first_type = make_node<BasicTypeNode>("nil"); }
     if (check(TokenType::BIT_OR)) {
         auto union_node = make_node<UnionTypeNode>();
         union_node->options.push_back(std::move(first_type));
@@ -898,11 +932,13 @@ std::unique_ptr<TypeNode> Parser::parse_type() {
     return first_type;
 }
 
-constexpr inline bool is_primitive(const std::string_view& name) {
+constexpr inline bool is_primitive(const std::string_view &name)
+{
     return name == "string" or name == "integer" or name == "number" or name == "boolean" or name == "nil";
 }
 
-std::unique_ptr<TypeNode> Parser::parse_base_type() {
+std::unique_ptr<TypeNode> Parser::parse_base_type()
+{
     if (check(TokenType::NAME) or check(TokenType::NIL)) {
         std::string name = peek_token().text;
         if (is_primitive(name)) {
@@ -945,18 +981,15 @@ std::unique_ptr<TypeNode> Parser::parse_base_type() {
             }
         }
     }
-    if (check(TokenType::FUNCTION)) {
-        return parse_function_type();
-    }
+    if (check(TokenType::FUNCTION)) { return parse_function_type(); }
     $push_error(std::format("expected type, got {}", peek_token()));
     return nullptr;
 }
 
-std::unique_ptr<TypeNode> Parser::parse_nominal_type() {
+std::unique_ptr<TypeNode> Parser::parse_nominal_type()
+{
     std::vector<std::string> name_parts;
-    if (not check(TokenType::NAME)) {
-        return nullptr;
-    }
+    if (not check(TokenType::NAME)) { return nullptr; }
     name_parts.push_back(peek_token().text);
     _pos++;
     while (match(TokenType::DOT)) {
@@ -974,12 +1007,11 @@ std::unique_ptr<TypeNode> Parser::parse_nominal_type() {
     return make_node<NominalTypeNode>(std::move(name_parts), std::move(type_args));
 }
 
-std::unique_ptr<TypeNode> Parser::parse_function_type() {
+std::unique_ptr<TypeNode> Parser::parse_function_type()
+{
     $consume(TokenType::FUNCTION, "internal error: 'function' expected");
     auto node = make_node<FunctionTypeNode>();
-    if (match(TokenType::LESS)) {
-        parse_generic_list(&node->type_parameters);
-    }
+    if (match(TokenType::LESS)) { parse_generic_list(&node->type_parameters); }
     $consume(TokenType::L_PAREN, "expected '(' in function type");
     if (not check(TokenType::R_PAREN)) {
         while (true) {
@@ -1018,7 +1050,8 @@ std::unique_ptr<TypeNode> Parser::parse_function_type() {
     return node;
 }
 
-std::vector<std::unique_ptr<TypeNode>> Parser::parse_type_list() {
+std::vector<std::unique_ptr<TypeNode>> Parser::parse_type_list()
+{
     std::vector<std::unique_ptr<TypeNode>> types;
     auto first = parse_type();
     if (first) types.push_back(std::move(first));
@@ -1031,11 +1064,10 @@ std::vector<std::unique_ptr<TypeNode>> Parser::parse_type_list() {
     return types;
 }
 
-std::vector<FunctionTypeNode::ParameterType> Parser::parse_param_type_list() {
-    return {};
-}
+std::vector<FunctionTypeNode::ParameterType> Parser::parse_param_type_list() { return {}; }
 
-std::vector<std::unique_ptr<TypeNode>> Parser::parse_return_type_list(bool *var_arg) {
+std::vector<std::unique_ptr<TypeNode>> Parser::parse_return_type_list(bool *var_arg)
+{
     std::vector<std::unique_ptr<TypeNode>> types;
     *var_arg = false;
     if (match(TokenType::L_PAREN)) {
@@ -1051,7 +1083,8 @@ std::vector<std::unique_ptr<TypeNode>> Parser::parse_return_type_list(bool *var_
     return types;
 }
 
-std::unique_ptr<RecordBody> Parser::parse_record_body() {
+std::unique_ptr<RecordBody> Parser::parse_record_body()
+{
     auto rb = make_node<RecordBody>();
     if (match(TokenType::LESS)) {
         parse_generic_list(&rb->type_parameters);
@@ -1065,14 +1098,10 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
         // }
         // $consume(TokenType::GREATER, "expected '>' after type parameters");
     }
-    if (match(TokenType::IS)) {
-        parse_interface_list(rb.get());
-    }
+    if (match(TokenType::IS)) { parse_interface_list(rb.get()); }
     if (match(TokenType::WHERE)) {
         rb->where_clause = parse_expression();
-        if (not rb->where_clause) {
-            $push_error("expected expression after 'where'");
-        }
+        if (not rb->where_clause) { $push_error("expected expression after 'where'"); }
     }
     while (not check(TokenType::END) and not is_at_end()) {
         RecordBody::Entry entry;
@@ -1164,15 +1193,14 @@ std::unique_ptr<RecordBody> Parser::parse_record_body() {
     return rb;
 }
 
-std::unique_ptr<EnumBody> Parser::parse_enum_body() {
+std::unique_ptr<EnumBody> Parser::parse_enum_body()
+{
     auto body = make_node<EnumBody>();
     while (not check(TokenType::END) and not is_at_end()) {
         if (check(TokenType::STRING)) {
             body->elements.push_back(peek_token().text);
             _pos++;
-            if (match(TokenType::COMMA) or match(TokenType::SEMICOLON)) {
-                continue;
-            }
+            if (match(TokenType::COMMA) or match(TokenType::SEMICOLON)) { continue; }
         } else if (check(TokenType::END)) {
             break;
         } else {
@@ -1184,7 +1212,8 @@ std::unique_ptr<EnumBody> Parser::parse_enum_body() {
     return body;
 }
 
-void Parser::parse_interface_list(RecordBody *rb) {
+void Parser::parse_interface_list(RecordBody *rb)
+{
     if (match(TokenType::L_BRACE)) {
         rb->structural_ext = parse_type();
         $consume(TokenType::R_BRACE, "expected '}' in interface list");
@@ -1212,4 +1241,3 @@ void Parser::parse_interface_list(RecordBody *rb) {
         }
     }
 }
-

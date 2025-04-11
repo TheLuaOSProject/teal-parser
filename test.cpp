@@ -6,20 +6,20 @@
 #include <unistd.h>
 
 static const char TL_SRC[] = {
-#embed  "tl.tl"
+#embed "tl.tl"
 
-, 0
+    , 0
 };
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-bool __is_posix_terminal(FILE *f)
-{ return isatty(fileno(f)); }
+bool __is_posix_terminal(FILE *f) { return isatty(fileno(f)); }
 
 _LIBCPP_END_NAMESPACE_STD
 
 int main(int argc, char *argv[])
-{   std::string src = TL_SRC;
+{
+    std::string src = TL_SRC;
     std::string_view filename = "tl.tl";
     if (argc > 1) {
         auto f = std::fopen(argv[1], "r");
@@ -39,25 +39,20 @@ int main(int argc, char *argv[])
         std::println("Read {} bytes from {}", len, argv[1]);
     }
 
-
     auto lexer = teal::parser::Lexer(src);
 
     auto start = std::chrono::steady_clock::now();
     auto [tks, errs] = lexer.tokenize();
     auto end = std::chrono::steady_clock::now();
 
-    constexpr auto to_ms = [](std::chrono::steady_clock::duration d) constexpr
-    { return std::chrono::duration_cast<std::chrono::milliseconds>(d); };
+    constexpr auto to_ms = [](std::chrono::steady_clock::duration d) constexpr { return std::chrono::duration_cast<std::chrono::milliseconds>(d); };
 
     auto len = to_ms(end - start);
     std::println("Lexing took {}", len);
 
-
     if (errs.size() > 0) {
         std::println(stderr, "Lexing errors:");
-        for (auto err : errs) {
-            std::println("    - {} ({}:{}:{})", err.to_string(), filename,  err.line, err.column);
-        }
+        for (auto err : errs) { std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column); }
         return 1;
     }
 
@@ -72,9 +67,7 @@ int main(int argc, char *argv[])
 
     if (perrs.size() > 0) {
         std::println(stderr, "Parser errors:");
-        for (auto err : perrs) {
-            std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column);
-        }
+        for (auto err : perrs) { std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column); }
         return 1;
     }
 
@@ -96,7 +89,7 @@ int main(int argc, char *argv[])
     auto f = std::fopen("AST.json", "w+b");
     if (f == nullptr) {
         std::println(stderr, "Failed to open AST.json");
-        return 0;;
+        return 0;
     }
     std::fwrite(json.data(), 1, json.size(), f);
     std::fclose(f);
@@ -111,9 +104,7 @@ int main(int argc, char *argv[])
     auto terrs = tycheck.getErrorReporter().getErrors();
     if (terrs.size() > 0) {
         std::println(stderr, "Type checking errors:");
-        for (auto err : terrs) {
-            std::println("    - {} ({}:{}:{})", err.message, filename, err.line, err.column);
-        }
+        for (auto err : terrs) { std::println("    - {} ({}:{}:{})", err.message, filename, err.line, err.column); }
         return 1;
     }
     std::println("No type errors");

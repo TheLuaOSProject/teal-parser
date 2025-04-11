@@ -15,19 +15,19 @@
 
 #pragma once
 
-#include <variant>
 #include <format>
+#include <variant>
 
 namespace teal::parser
 {
-    template<typename ...T>
+    template <typename... T>
     struct Error {
         using Kind_t = std::variant<T...>;
         Kind_t kind;
     };
 }
 
-template<typename TExpected, typename ...T>
+template <typename TExpected, typename... T>
 static constexpr bool operator->*(const std::variant<T...> &variant, TExpected *expected)
 {
     try {
