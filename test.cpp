@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
     auto terrs = tycheck.get_error_reporter().get_errors();
     if (terrs.size() > 0) {
         std::println(stderr, "Type checking errors:");
-        for (auto err : terrs) { std::println("    - {} ({}:{}:{})", err.message, filename, err.line, err.column); }
+        for (auto err : terrs) { std::println("    - {} ({}:{}:{} - {}:{})", err.message, filename, err.line, err.column, err.occured_at.file_name(), err.occured_at.line()); }
         return 1;
     }
     std::println("No type errors");

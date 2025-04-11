@@ -18,10 +18,10 @@ namespace teal::parser::typecheck
     private:
         SymbolTable _symbols;
         ErrorReporter _errors;
-        void declare_type(teal::parser::ast::RecordDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent = nullptr);
-        void declare_type(teal::parser::ast::EnumDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent = nullptr);
-        void declare_type(teal::parser::ast::TypeAliasStatement *node, std::shared_ptr<TypeSymbol> parent = nullptr);
-        void define_type(std::shared_ptr<TypeSymbol> typeSymbol);
+        std::shared_ptr<TypeSymbol> declare_type(teal::parser::ast::RecordDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent = nullptr);
+        std::shared_ptr<TypeSymbol> declare_type(teal::parser::ast::EnumDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent = nullptr);
+        std::shared_ptr<TypeSymbol> declare_type(teal::parser::ast::TypeAliasStatement *node, std::shared_ptr<TypeSymbol> parent = nullptr);
+        std::shared_ptr<TypeSymbol> define_type(std::shared_ptr<TypeSymbol> typeSymbol);
         TypePtr check_expression(teal::parser::ast::Expression *expr);
         TypePtr check_expression(teal::parser::ast::Expression *expr, const TypePtr &expe);
         void check_statement(teal::parser::ast::Statement *stmt);

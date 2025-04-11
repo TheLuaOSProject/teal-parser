@@ -16,16 +16,16 @@ bool SymbolTable::define(
     if (is_global) {
         auto &globalScope = _scopes.front();
         if (globalScope.find(name) != globalScope.end()) return false;
-        globalScope[name] = VarInfo { type, attr, is_const, true };
+        globalScope[name] = VariableInfo { type, attr, is_const, true };
         return true;
     } else {
         auto &current = _scopes.back();
         if (current.find(name) != current.end()) return false;
-        current[name] = VarInfo { type, attr, is_const, _scopes.size() == 1 };
+        current[name] = VariableInfo { type, attr, is_const, _scopes.size() == 1 };
         return true;
     }
 }
-VarInfo *SymbolTable::lookup(const std::string &name)
+VariableInfo *SymbolTable::lookup(const std::string &name)
 {
     for (int i = _scopes.size() - 1; i >= 0; --i) {
         auto it = _scopes[i].find(name);
@@ -33,7 +33,7 @@ VarInfo *SymbolTable::lookup(const std::string &name)
     }
     return nullptr;
 }
-VarInfo *SymbolTable::lookup_local(const std::string &name)
+VariableInfo *SymbolTable::lookup_local(const std::string &name)
 {
     if (_scopes.empty()) return nullptr;
     auto &current = _scopes.back();
@@ -41,7 +41,7 @@ VarInfo *SymbolTable::lookup_local(const std::string &name)
     if (it != current.end()) return &it->second;
     return nullptr;
 }
-VarInfo *SymbolTable::lookup_global(const std::string &name)
+VariableInfo *SymbolTable::lookup_global(const std::string &name)
 {
     if (_scopes.empty()) return nullptr;
     auto &globalScope = _scopes.front();

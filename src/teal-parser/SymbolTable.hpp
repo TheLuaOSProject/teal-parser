@@ -10,7 +10,7 @@
 namespace teal::parser::typecheck
 {
 
-    struct VarInfo {
+    struct VariableInfo {
         TypePtr type;
         std::optional<std::string> attribute;
         bool is_const;
@@ -23,12 +23,12 @@ namespace teal::parser::typecheck
         void push_scope();
         void pop_scope();
         bool define(const std::string &name, const TypePtr &type, bool is_const = false, bool is_global = false, const std::optional<std::string> &attr = std::nullopt);
-        VarInfo *lookup(const std::string &name);
-        VarInfo *lookup_local(const std::string &name);
-        VarInfo *lookup_global(const std::string &name);
+        VariableInfo *lookup(const std::string &name);
+        VariableInfo *lookup_local(const std::string &name);
+        VariableInfo *lookup_global(const std::string &name);
 
     private:
-        std::vector<std::unordered_map<std::string, VarInfo>> _scopes;
+        std::vector<std::unordered_map<std::string, VariableInfo>> _scopes;
     };
 
 }

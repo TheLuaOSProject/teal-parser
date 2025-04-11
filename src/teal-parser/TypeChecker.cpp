@@ -9,6 +9,45 @@ TypeChecker::TypeChecker() : _loop_depth(0) { }
 
 void TypeChecker::check(Block *ast)
 {
+   // --- Pass 1: Declare all top-level types ---
+    std::vector<std::shared_ptr<TypeSymbol>> declaredTypeSymbols;
+    for (auto &stmt : ast->statements) {
+        if (not stmt) continue;
+        if (auto rec = dynamic_cast<RecordDeclarationStatement *>(stmt.get())) {
+           // Pass nullptr for parent as these are top-level
+           // declare_type now needs to return or store the created symbol
+            std::shared_ptr<TypeSymbol> sym = declare_type(rec, nullptr); // Modify declare_type
+            if (sym) declaredTypeSymbols.push_back(sym);
+        } else if (auto en = dynamic_cast<EnumDeclarationStatement *>(stmt.get())) {
+            std::shared_ptr<TypeSymbol> sym = declare_type(en, nullptr);   // Modify declare_type
+            if (sym) declaredTypeSymbols.push_back(sym);
+        } else if (auto ta = dynamic_cast<TypeAliasStatement *>(stmt.get())) {
+            std::shared_ptr<TypeSymbol> sym = declare_type(ta, nullptr);   // Modify declare_type
+            if (sym) declaredTypeSymbols.push_back(sym);
+        }
+       // We don't check other statements like functions or variables yet
+    }
+
+   // --- Pass 2: Define all declared types ---
+   // This pass resolves fields, alias targets, etc.
+    for (const auto &typeSym : declaredTypeSymbols) define_type(typeSym);
+    // Add logic here if define_type needs multiple iterations for complex dependencies
+    // E.g., loop until no more types change/get defined. For simple cases, one pass might be enough.
+
+   // --- Pass 3: Check all statements (code execution logic) ---
+    _symbols.push_scope(); // Push global scope for checking statements
+    for (auto &stmt : ast->statements) {
+        if (not stmt) continue;
+       // Skip type declarations, as they were handled in passes 1 & 2
+        if (dynamic_cast<RecordDeclarationStatement *>(stmt.get()) or dynamic_cast<EnumDeclarationStatement *>(stmt.get())
+            or dynamic_cast<TypeAliasStatement *>(stmt.get()))
+            continue;
+
+       // Now check the actual code statements
+        check_statement(stmt.get()); // Pass raw pointer
+    }
+    _symbols.pop_scope(); // Pop global scope
+
     for (auto &stmt : ast->statements) {
         if (not stmt) continue;
         if (auto rec = dynamic_cast<RecordDeclarationStatement *>(stmt.get())) {
@@ -38,7 +77,7 @@ void TypeChecker::check(Block *ast)
     // second pass (define types) happens during statement checking
 }
 
-void TypeChecker::declare_type(RecordDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent)
+std::shared_ptr<TypeSymbol> TypeChecker::declare_type(RecordDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent)
 {
     TypeSymbol::Kind k = node->is_interface ? TypeSymbol::Kind::INTERFACE : TypeSymbol::Kind::RECORD;
     auto typeSym = std::make_shared<TypeSymbol>(k, node->name);
@@ -56,7 +95,8 @@ void TypeChecker::declare_type(RecordDeclarationStatement *node, std::shared_ptr
                 _errors.add_error(node->line, node->column, "Unknown type in generic constraint: " + gp.is.value());
             } else {
                 constraintType = constraintSym->type;
-                if (constraintSym->kind != TypeSymbol::Kind::INTERFACE) { _errors.add_error(node->line, node->column, "Generic constraint must be an interface type"); }
+                if (constraintSym->kind != TypeSymbol::Kind::INTERFACE)
+                    _errors.add_error(node->line, node->column, "Generic constraint must be an interface type");
             }
         }
         TypePtr tvar = Type::make_type_variable(gp.name, constraintType);
@@ -68,9 +108,11 @@ void TypeChecker::declare_type(RecordDeclarationStatement *node, std::shared_ptr
         bool ok = _symbols.define(node->name, recType, true, node->visibility == Visibility::GLOBAL);
         if (not ok) _errors.add_error(node->line, node->column, "Duplicate type name: " + node->name);
     }
+
+    return typeSym;
 }
 
-void TypeChecker::declare_type(EnumDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent)
+std::shared_ptr<TypeSymbol> TypeChecker::declare_type(EnumDeclarationStatement *node, std::shared_ptr<TypeSymbol> parent)
 {
     auto typeSym = std::make_shared<TypeSymbol>(TypeSymbol::Kind::ENUM, node->name);
     typeSym->parent = parent;
@@ -85,12 +127,15 @@ void TypeChecker::declare_type(EnumDeclarationStatement *node, std::shared_ptr<T
         bool ok = _symbols.define(node->name, enumType, true, node->visibility == Visibility::GLOBAL);
         if (not ok) _errors.add_error(node->line, node->column, "Duplicate type name: " + node->name);
     }
+
+    return typeSym;
 }
 
-void TypeChecker::declare_type(TypeAliasStatement *node, std::shared_ptr<TypeSymbol> parent)
+std::shared_ptr<TypeSymbol> TypeChecker::declare_type(TypeAliasStatement *node, std::shared_ptr<TypeSymbol> parent)
 {
     auto typeSym = std::make_shared<TypeSymbol>(TypeSymbol::Kind::ALIAS, node->name);
     typeSym->parent = parent;
+
     for (auto &gp : node->type_parameters) {
         TypePtr constraintType = nullptr;
         if (gp.is.has_value()) {
@@ -107,7 +152,9 @@ void TypeChecker::declare_type(TypeAliasStatement *node, std::shared_ptr<TypeSym
     }
     typeSym->ast_type_alias = node;
     typeSym->type = nullptr;
-    if (parent) { parent->nested_types[node->name] = typeSym; }
+    if (parent) parent->nested_types[node->name] = typeSym;
+
+    return typeSym;
 }
 
 std::shared_ptr<TypeSymbol> TypeChecker::find_type_symbol(const std::vector<std::string> &nameParts)
@@ -127,9 +174,9 @@ std::shared_ptr<TypeSymbol> TypeChecker::find_type_symbol(const std::vector<std:
     return sym;
 }
 
-void TypeChecker::define_type(std::shared_ptr<TypeSymbol> typeSymbol)
+std::shared_ptr<TypeSymbol> TypeChecker::define_type(std::shared_ptr<TypeSymbol> typeSymbol)
 {
-    if (not typeSymbol) return;
+    if (not typeSymbol) return nullptr;
     if (typeSymbol->kind == TypeSymbol::Kind::RECORD or typeSymbol->kind == TypeSymbol::Kind::INTERFACE) {
         RecordBody *body = typeSymbol->ast_record_body;
         if (body) {
@@ -158,7 +205,7 @@ void TypeChecker::define_type(std::shared_ptr<TypeSymbol> typeSymbol)
         }
         for (auto &[key, val] : typeSymbol->nested_types) {
             define_type(val);
-            if (val->type) { typeSymbol->fields[key] = val->type; }
+            if (val->type) typeSymbol->fields[key] = val->type;
         }
     } else if (typeSymbol->kind == TypeSymbol::Kind::ALIAS) {
         if (typeSymbol->ast_type_alias) {
@@ -170,6 +217,8 @@ void TypeChecker::define_type(std::shared_ptr<TypeSymbol> typeSymbol)
             }
         }
     }
+
+    return typeSymbol;
 }
 
 TypePtr TypeChecker::resolve_type_node(TypeNode *typeNode, std::shared_ptr<TypeSymbol> currentTypeSym)
@@ -189,7 +238,7 @@ TypePtr TypeChecker::resolve_type_node(TypeNode *typeNode, std::shared_ptr<TypeS
             }
         }
         std::shared_ptr<TypeSymbol> sym = find_type_symbol({ name });
-        if (sym) { return sym->type ? sym->type : Type::make_any(); }
+        if (sym) return sym->type ? sym->type : Type::make_any();
         _errors.add_error(typeNode->line, typeNode->column, "Unknown type: " + name);
         return Type::make_any();
     }
@@ -201,15 +250,17 @@ TypePtr TypeChecker::resolve_type_node(TypeNode *typeNode, std::shared_ptr<TypeS
         }
         std::vector<TypePtr> typeArgs;
         for (auto &argNode : nom->type_arguments) { typeArgs.push_back(resolve_type_node(argNode.get(), currentTypeSym)); }
-        if (not sym->type_parameters.empty() and typeArgs.size() != sym->type_parameters.size()) { _errors.add_error(typeNode->line, typeNode->column, "Generic type parameters count mismatch for " + sym->name); }
+        if (not sym->type_parameters.empty() and typeArgs.size() != sym->type_parameters.size()) {
+            _errors.add_error(typeNode->line, typeNode->column, "Generic type parameters count mismatch for " + sym->name);
+        }
         if (sym->kind == TypeSymbol::Kind::RECORD or sym->kind == TypeSymbol::Kind::INTERFACE) {
             return Type::make_record(sym, typeArgs);
         } else if (sym->kind == TypeSymbol::Kind::ENUM) {
-            if (not typeArgs.empty()) { _errors.add_error(typeNode->line, typeNode->column, "Enum type cannot have type parameters"); }
+            if (not typeArgs.empty()) _errors.add_error(typeNode->line, typeNode->column, "Enum type cannot have type parameters");
             return sym->type;
         } else if (sym->kind == TypeSymbol::Kind::ALIAS) {
-            if (not sym->alias_target) { define_type(sym); }
-            if (sym->alias_target) { return sym->alias_target; }
+            if (not sym->alias_target) define_type(sym);
+            if (sym->alias_target) return sym->alias_target;
             return Type::make_any();
         }
         return sym->type ? sym->type : Type::make_any();
@@ -258,7 +309,7 @@ TypePtr TypeChecker::resolve_type_node(TypeNode *typeNode, std::shared_ptr<TypeS
     }
     if (auto unionNode = dynamic_cast<UnionTypeNode *>(typeNode)) {
         std::vector<TypePtr> options;
-        for (auto &optNode : unionNode->options) { options.push_back(resolve_type_node(optNode.get(), currentTypeSym)); }
+        for (auto &optNode : unionNode->options) options.push_back(resolve_type_node(optNode.get(), currentTypeSym));
         return Type::make_union(options);
     }
     return Type::make_any();
@@ -284,13 +335,13 @@ std::unordered_map<std::string, TypeChecker::NarrowInfo> TypeChecker::analyze_co
                         for (auto &opt : varType->union_members) {
                             if (opt->is_assignable_to(targetType) and targetType->is_assignable_to(opt)) { inter.push_back(opt); }
                         }
-                        if (not inter.empty()) { thenType = inter.size() == 1 ? inter[0] : Type::make_union(inter); }
+                        if (not inter.empty()) thenType = inter.size() == 1 ? inter[0] : Type::make_union(inter);
                     }
                     TypePtr elseType;
                     if (varType->kind == Type::Kind::UNION) {
                         std::vector<TypePtr> remaining;
                         for (auto &opt : varType->union_members) {
-                            if (not opt->is_assignable_to(targetType)) { remaining.push_back(opt); }
+                            if (not opt->is_assignable_to(targetType)) remaining.push_back(opt);
                         }
                         elseType = remaining.empty() ? Type::make_nil() : (remaining.size() == 1 ? remaining[0] : Type::make_union(remaining));
                     } else {
@@ -306,7 +357,9 @@ std::unordered_map<std::string, TypeChecker::NarrowInfo> TypeChecker::analyze_co
         Expression *right = binOp->right.get();
         bool equality = (op == TokenType::EQUALS);
         bool inequality = (op == TokenType::NOT_EQ);
-        if ((equality or inequality) and ((dynamic_cast<NilExpression *>(left) and dynamic_cast<NameExpression *>(right)) or (dynamic_cast<NameExpression *>(left) and dynamic_cast<NilExpression *>(right)))) {
+        if ((equality or inequality) and
+            ((dynamic_cast<NilExpression *>(left) and dynamic_cast<NameExpression *>(right))
+                or (dynamic_cast<NameExpression *>(left) and dynamic_cast<NilExpression *>(right)))) {
             NameExpression *nameExp = dynamic_cast<NameExpression *>(dynamic_cast<NilExpression *>(left) ? right : left);
             std::string varName = nameExp->name;
             VariableInfo *var = _symbols.lookup(varName);
@@ -352,7 +405,9 @@ std::unordered_map<std::string, TypeChecker::NarrowInfo> TypeChecker::analyze_co
                     if (varType->kind == Type::Kind::UNION) {
                         std::vector<TypePtr> falsy;
                         for (auto &opt : varType->union_members) {
-                            if (opt->kind == Type::Kind::NIL or opt->kind == Type::Kind::BOOLEAN) { falsy.push_back(opt->kind == Type::Kind::BOOLEAN ? Type::make_boolean() : opt); }
+                            if (opt->kind == Type::Kind::NIL or opt->kind == Type::Kind::BOOLEAN) {
+                                falsy.push_back(opt->kind == Type::Kind::BOOLEAN ? Type::make_boolean() : opt);
+                            }
                         }
                         thenType = falsy.empty() ? Type::make_nil() : (falsy.size() == 1 ? falsy[0] : Type::make_union(falsy));
                     } else {
@@ -384,7 +439,8 @@ std::unordered_map<std::string, TypeChecker::NarrowInfo> TypeChecker::analyze_co
                 std::vector<TypePtr> falsy;
                 for (auto &opt : varType->union_members) {
                     if (opt->kind != Type::Kind::NIL and opt->kind != Type::Kind::BOOLEAN) truthy.push_back(opt);
-                    if (opt->kind == Type::Kind::NIL or opt->kind == Type::Kind::BOOLEAN) falsy.push_back(opt->kind == Type::Kind::BOOLEAN ? Type::make_boolean() : opt);
+                    if (opt->kind == Type::Kind::NIL or opt->kind == Type::Kind::BOOLEAN)
+                        falsy.push_back(opt->kind == Type::Kind::BOOLEAN ? Type::make_boolean() : opt);
                 }
                 if (not truthy.empty()) thenType = truthy.size() == 1 ? truthy[0] : Type::make_union(truthy);
                 elseType = falsy.empty() ? Type::make_nil() : (falsy.size() == 1 ? falsy[0] : Type::make_union(falsy));
@@ -415,7 +471,7 @@ void TypeChecker::check_if(IfStatement *node)
         _symbols.push_scope();
         check_statement(branch.block.get());
         _symbols.pop_scope();
-        for (auto &pr : savedTypes) { pr.first->type = pr.second; }
+        for (auto &pr : savedTypes) pr.first->type = pr.second;
     }
     if (node->else_block) {
         _symbols.push_scope();
@@ -451,7 +507,9 @@ void TypeChecker::check_numeric_for(ForNumericStatement *node)
     TypePtr stepType = node->expressions.step ? check_expression(node->expressions.step.get()) : nullptr;
     if (not stepType) stepType = Type::make_integer();
     TypePtr loopVarType;
-    if ((startType == nullptr or startType->kind == Type::Kind::INTEGER) and (endType == nullptr or endType->kind == Type::Kind::INTEGER) and (stepType->kind == Type::Kind::INTEGER)) {
+    if ((startType == nullptr or startType->kind == Type::Kind::INTEGER)
+        and (endType == nullptr or endType->kind == Type::Kind::INTEGER)
+        and (stepType->kind == Type::Kind::INTEGER)) {
         loopVarType = Type::make_integer();
     } else {
         loopVarType = Type::make_number();
@@ -556,7 +614,11 @@ void TypeChecker::check_function_declaration(FunctionDeclarationStatement *node)
                 auto &fields = classSym->fields;
                 if (fields.find(node->method_name) != fields.end()) {
                     TypePtr existingType = fields[node->method_name];
-                    if (not funcType->equals(existingType)) { _errors.add_error(node->line, node->column, "Method signature does not match previously declared type for " + node->method_name); }
+                    if (not funcType->equals(existingType)) {
+                        _errors.add_error(
+                            node->line, node->column, "Method signature does not match previously declared type for " + node->method_name
+                        );
+                    }
                 }
                 fields[node->method_name] = funcType;
             } else {
@@ -600,7 +662,9 @@ void TypeChecker::check_function_declaration(FunctionDeclarationStatement *node)
             bool ok = _symbols.define(funcName, funcType, false, node->visibility == Visibility::GLOBAL);
             if (not ok) {
                 VariableInfo *existing = _symbols.lookup(funcName);
-                if (existing and not funcType->equals(existing->type)) { _errors.add_error(node->line, node->column, "Function redefinition with different type for " + funcName); }
+                if (existing and not funcType->equals(existing->type)) {
+                    _errors.add_error(node->line, node->column, "Function redefinition with different type for " + funcName);
+                }
             }
         }
     }
@@ -622,7 +686,16 @@ void TypeChecker::check_variable_declaration(VariableDeclarationStatement *node)
     size_t nVars = node->names.size();
     size_t nTypes = node->types.size();
     std::vector<TypePtr> valueTypes;
-    for (auto &val : node->values) { valueTypes.push_back(check_expression(val.get())); }
+    // for (auto &val : node->values) {
+    for (size_t i = 0; i < nVars; i++) {
+        TypePtr ptr;
+        if (i < nTypes) {
+            ptr = check_expression(node->values[i].get(), resolve_type_node(node->types[i].get()));
+        } else {
+            ptr = check_expression(node->values[i].get());
+        }
+        valueTypes.push_back(ptr);
+    }
     for (size_t i = valueTypes.size(); i < nVars; ++i) { valueTypes.push_back(Type::make_nil()); }
     for (size_t i = 0; i < nVars; ++i) {
         std::string varName = node->names[i].name;
@@ -641,7 +714,12 @@ void TypeChecker::check_variable_declaration(VariableDeclarationStatement *node)
         } else {
             varType = declaredType;
         }
-        if (initType and declaredType and not initType->is_assignable_to(declaredType)) { _errors.add_error(node->line, node->column, "Type mismatch in initialization of " + varName + ": cannot assign " + initType->to_string() + " to " + declaredType->to_string()); }
+        if (initType and declaredType and not initType->is_assignable_to(declaredType)) {
+            _errors.add_error(
+                node->line, node->column,
+                "Type mismatch in initialization of " + varName + ": cannot assign " + initType->to_string() + " to " + declaredType->to_string()
+            );
+        }
         bool ok = _symbols.define(varName, varType, is_const, node->visibility == Visibility::GLOBAL, attr);
         if (not ok) { _errors.add_error(node->line, node->column, "Duplicate definition of variable " + varName); }
         if (attr and attr.value() == "total" and varType->kind == Type::Kind::MAP) {
@@ -674,7 +752,11 @@ void TypeChecker::check_variable_declaration(VariableDeclarationStatement *node)
                                 }
                             }
                         }
-                        if (not hasTrue or not hasFalse) { _errors.add_error(node->line, node->column, "Table not total: missing key " + std::string(not hasTrue ? "\"true\"" : "\"false\"")); }
+                        if (not hasTrue or not hasFalse) {
+                            _errors.add_error(
+                                node->line, node->column, "Table not total: missing key " + std::string(not hasTrue ? "\"true\"" : "\"false\"")
+                            );
+                        }
                     }
                 }
             }
@@ -700,22 +782,43 @@ void TypeChecker::check_assignment(AssignmentStatement *node)
                 continue;
             }
             if (var->is_const) { _errors.add_error(lhs->line, lhs->column, "Cannot assign to constant variable " + name); }
-            if (not rhsType->is_assignable_to(var->type)) { _errors.add_error(lhs->line, lhs->column, "Type mismatch: cannot assign " + rhsType->to_string() + " to " + var->type->to_string()); }
+            if (not rhsType->is_assignable_to(var->type)) {
+                _errors.add_error(lhs->line, lhs->column, "Type mismatch: cannot assign " + rhsType->to_string() + " to " + var->type->to_string());
+            }
         } else if (auto idxExp = dynamic_cast<IndexExpression *>(lhs)) {
             TypePtr tableType = check_expression(idxExp->table.get());
             TypePtr indexType = check_expression(idxExp->index.get());
             if (tableType->kind == Type::Kind::ARRAY) {
-                if (indexType->kind != Type::Kind::NUMBER and indexType->kind != Type::Kind::INTEGER) { _errors.add_error(lhs->line, lhs->column, "Array index is not a number"); }
-                if (not rhsType->is_assignable_to(tableType->element)) { _errors.add_error(lhs->line, lhs->column, "Type mismatch in array assignment: expected " + tableType->element->to_string()); }
+                if (indexType->kind != Type::Kind::NUMBER and indexType->kind != Type::Kind::INTEGER) {
+                    _errors.add_error(lhs->line, lhs->column, "Array index is not a number");
+                }
+                if (not rhsType->is_assignable_to(tableType->element)) {
+                    _errors.add_error(lhs->line, lhs->column, "Type mismatch in array assignment: expected " + tableType->element->to_string());
+                }
             } else if (tableType->kind == Type::Kind::MAP) {
-                if (not indexType->is_assignable_to(tableType->key)) { _errors.add_error(lhs->line, lhs->column, "Map index type mismatch: cannot index " + tableType->to_string() + " with " + indexType->to_string()); }
-                if (not rhsType->is_assignable_to(tableType->value)) { _errors.add_error(lhs->line, lhs->column, "Type mismatch in map assignment: expected " + tableType->value->to_string()); }
+                if (not indexType->is_assignable_to(tableType->key)) {
+                    _errors.add_error(
+                        lhs->line, lhs->column, "Map index type mismatch: cannot index " + tableType->to_string() + " with " + indexType->to_string()
+                    );
+                }
+                if (not rhsType->is_assignable_to(tableType->value)) {
+                    _errors.add_error(lhs->line, lhs->column, "Type mismatch in map assignment: expected " + tableType->value->to_string());
+                }
             } else if (tableType->kind == Type::Kind::TUPLE) {
-                if (indexType->kind != Type::Kind::NUMBER and indexType->kind != Type::Kind::INTEGER) { _errors.add_error(lhs->line, lhs->column, "Tuple index is not a number"); }
+                if (indexType->kind != Type::Kind::NUMBER and indexType->kind != Type::Kind::INTEGER) {
+                    _errors.add_error(lhs->line, lhs->column, "Tuple index is not a number");
+                }
             } else if (tableType->kind == Type::Kind::RECORD) {
                 if (tableType->record->array_element_type) {
-                    if (indexType->kind != Type::Kind::NUMBER and indexType->kind != Type::Kind::INTEGER) { _errors.add_error(lhs->line, lhs->column, "Array part index is not a number"); }
-                    if (not rhsType->is_assignable_to(tableType->record->array_element_type)) { _errors.add_error(lhs->line, lhs->column, "Type mismatch in array part assignment: expected " + tableType->record->array_element_type->to_string()); }
+                    if (indexType->kind != Type::Kind::NUMBER and indexType->kind != Type::Kind::INTEGER) {
+                        _errors.add_error(lhs->line, lhs->column, "Array part index is not a number");
+                    }
+                    if (not rhsType->is_assignable_to(tableType->record->array_element_type)) {
+                        _errors.add_error(
+                            lhs->line, lhs->column,
+                            "Type mismatch in array part assignment: expected " + tableType->record->array_element_type->to_string()
+                        );
+                    }
                 } else {
                     _errors.add_error(lhs->line, lhs->column, "Cannot index type " + tableType->to_string());
                 }
@@ -728,7 +831,12 @@ void TypeChecker::check_assignment(AssignmentStatement *node)
                 auto it = fields.find(fieldName);
                 if (it != fields.end()) {
                     TypePtr fieldType = it->second;
-                    if (not rhsType->is_assignable_to(fieldType)) { _errors.add_error(lhs->line, lhs->column, "Type mismatch for field '" + fieldName + "': cannot assign " + rhsType->to_string() + " to " + fieldType->to_string()); }
+                    if (not rhsType->is_assignable_to(fieldType)) {
+                        _errors.add_error(
+                            lhs->line, lhs->column,
+                            "Type mismatch for field '" + fieldName + "': cannot assign " + rhsType->to_string() + " to " + fieldType->to_string()
+                        );
+                    }
                 } else {
                     if (objType->record->kind != TypeSymbol::Kind::INTERFACE) {
                         _errors.add_error(lhs->line, lhs->column, "Field " + fieldName + " does not exist in record " + objType->record->name);
@@ -737,7 +845,9 @@ void TypeChecker::check_assignment(AssignmentStatement *node)
                     }
                 }
             } else if (objType->kind == Type::Kind::MAP and objType->key->kind == Type::Kind::STRING) {
-                if (objType->value->kind != Type::Kind::ANY and not rhsType->is_assignable_to(objType->value)) { _errors.add_error(lhs->line, lhs->column, "Type mismatch for table field '" + fieldName + "'"); }
+                if (objType->value->kind != Type::Kind::ANY and not rhsType->is_assignable_to(objType->value)) {
+                    _errors.add_error(lhs->line, lhs->column, "Type mismatch for table field '" + fieldName + "'");
+                }
                 if (objType->value->kind == Type::Kind::ANY) { objType->value = rhsType; }
             } else if (objType->kind != Type::Kind::ANY) {
                 _errors.add_error(lhs->line, lhs->column, "Cannot access field of type " + objType->to_string());
@@ -790,7 +900,13 @@ TypePtr TypeChecker::check_expression(Expression *expr, const TypePtr &expectedT
             } else {
                 size_t checkCount = std::min(provided, sig->parameter_types.size());
                 for (size_t i = 0; i < checkCount; ++i) {
-                    if (not argTypes[i]->is_assignable_to(sig->parameter_types[i])) { _errors.add_error(expr->line, expr->column, "Argument " + std::to_string(i + 1) + " type mismatch: expected " + sig->parameter_types[i]->to_string() + ", got " + argTypes[i]->to_string()); }
+                    if (not argTypes[i]->is_assignable_to(sig->parameter_types[i])) {
+                        _errors.add_error(
+                            expr->line, expr->column,
+                            "Argument " + std::to_string(i + 1) + " type mismatch: expected " + sig->parameter_types[i]->to_string() + ", got "
+                                + argTypes[i]->to_string()
+                        );
+                    }
                 }
             }
             if (not sig->return_types.empty()) {
@@ -817,15 +933,21 @@ TypePtr TypeChecker::check_expression(Expression *expr, const TypePtr &expectedT
         case TokenType::DIV:
         case TokenType::MOD:
         case TokenType::POW:
-            if (not ltype->is_assignable_to(Type::make_number()) or not rtype->is_assignable_to(Type::make_number())) { _errors.add_error(expr->line, expr->column, "Arithmetic operator applied to non-numeric type"); }
+            if (not ltype->is_assignable_to(Type::make_number()) or not rtype->is_assignable_to(Type::make_number())) {
+                _errors.add_error(expr->line, expr->column, "Arithmetic operator applied to non-numeric type");
+            }
             if (ltype->kind == Type::Kind::INTEGER and rtype->kind == Type::Kind::INTEGER and binOp->operation != TokenType::DIV) {
                 return Type::make_integer();
             } else {
                 return Type::make_number();
             }
         case TokenType::CONCAT:
-            if (not ltype->is_assignable_to(Type::make_string()) and not ltype->is_assignable_to(Type::make_number())) { _errors.add_error(expr->line, expr->column, "Concat left operand not string or number"); }
-            if (not rtype->is_assignable_to(Type::make_string()) and not rtype->is_assignable_to(Type::make_number())) { _errors.add_error(expr->line, expr->column, "Concat right operand not string or number"); }
+            if (not ltype->is_assignable_to(Type::make_string()) and not ltype->is_assignable_to(Type::make_number())) {
+                _errors.add_error(expr->line, expr->column, "Concat left operand not string or number");
+            }
+            if (not rtype->is_assignable_to(Type::make_string()) and not rtype->is_assignable_to(Type::make_number())) {
+                _errors.add_error(expr->line, expr->column, "Concat right operand not string or number");
+            }
             return Type::make_string();
         case TokenType::EQUALS:
         case TokenType::NOT_EQ:
@@ -833,7 +955,9 @@ TypePtr TypeChecker::check_expression(Expression *expr, const TypePtr &expectedT
         case TokenType::LESS_EQ:
         case TokenType::GREATER:
         case TokenType::GREATER_EQ:
-            if (not ltype->equals(rtype) and ltype->kind != Type::Kind::ANY and rtype->kind != Type::Kind::ANY) { _errors.add_error(expr->line, expr->column, "Comparing incompatible types " + ltype->to_string() + " and " + rtype->to_string()); }
+            if (not ltype->equals(rtype) and ltype->kind != Type::Kind::ANY and rtype->kind != Type::Kind::ANY) {
+                _errors.add_error(expr->line, expr->column, "Comparing incompatible types " + ltype->to_string() + " and " + rtype->to_string());
+            }
             return Type::make_boolean();
         case TokenType::AND: {
             TypePtr resultType;
@@ -877,12 +1001,15 @@ TypePtr TypeChecker::check_expression(Expression *expr, const TypePtr &expectedT
         TypePtr operandType = check_expression(unOp->operand.get());
         switch (unOp->operation) {
         case TokenType::SUB:
-            if (not operandType->is_assignable_to(Type::make_number())) { _errors.add_error(expr->line, expr->column, "Unary minus on non-numeric type"); }
+            if (not operandType->is_assignable_to(Type::make_number())) {
+                _errors.add_error(expr->line, expr->column, "Unary minus on non-numeric type");
+            }
             return operandType->kind == Type::Kind::INTEGER ? Type::make_integer() : Type::make_number();
         case TokenType::NOT:
             return Type::make_boolean();
         case TokenType::LENGTH:
-            if (operandType->kind == Type::Kind::STRING or operandType->kind == Type::Kind::ARRAY or operandType->kind == Type::Kind::MAP or operandType->kind == Type::Kind::TUPLE) {
+            if (operandType->kind == Type::Kind::STRING or operandType->kind == Type::Kind::ARRAY or operandType->kind == Type::Kind::MAP
+                or operandType->kind == Type::Kind::TUPLE) {
                 return Type::make_number();
             } else if (operandType->kind == Type::Kind::RECORD and operandType->record->array_element_type) {
                 return Type::make_number();
@@ -918,47 +1045,147 @@ TypePtr TypeChecker::check_expression(Expression *expr, const TypePtr &expectedT
             if (expectedType->kind == Type::Kind::ARRAY or expectedType->kind == Type::Kind::TUPLE) {
                 TypePtr elemType = (expectedType->kind == Type::Kind::ARRAY) ? expectedType->element : nullptr;
                 std::vector<TypePtr> tupleTypes;
-                if (expectedType->kind == Type::Kind::TUPLE) { tupleTypes = expectedType->tuple_types; }
-                size_t index = 0;
-                for (auto &field : tableLit->fields) {
-                    TypePtr valType;
+                if (expectedType->kind == Type::Kind::TUPLE) tupleTypes = expectedType->tuple_types;
+                size_t expected_idx = 0; // For tuple checking
+                for (size_t i = 0; i < tableLit->fields.size(); ++i) {
+                    auto &field = tableLit->fields[i];
                     if (std::holds_alternative<std::unique_ptr<Expression>>(field)) {
-                        valType = check_expression(std::get<std::unique_ptr<Expression>>(field).get());
+                        // Array-style entry [value]
+                        auto &valueExpr = std::get<std::unique_ptr<Expression>>(field);
+                        TypePtr valueExpectedType = nullptr;
                         if (expectedType->kind == Type::Kind::ARRAY) {
-                            if (not valType->is_assignable_to(elemType)) { _errors.add_error(expr->line, expr->column, "Array element type mismatch: expected " + elemType->to_string()); }
+                            valueExpectedType = elemType;
                         } else if (expectedType->kind == Type::Kind::TUPLE) {
-                            if (index < tupleTypes.size() and not valType->is_assignable_to(tupleTypes[index])) { _errors.add_error(expr->line, expr->column, "Tuple element " + std::to_string(index + 1) + " type mismatch"); }
+                            if (expected_idx < tupleTypes.size()) {
+                                valueExpectedType = tupleTypes[expected_idx];
+                            } else {
+                                _errors.add_error(expr->line, expr->column, "Too many elements for tuple type " + expectedType->to_string());
+                                valueExpectedType = Type::make_any(); // Avoid further errors
+                            }
                         }
+
+                        TypePtr actualValueType = check_expression(valueExpr.get(), valueExpectedType);
+
+                        if (valueExpectedType and not actualValueType->is_assignable_to(valueExpectedType)) {
+                            _errors.add_error(
+                                expr->line, expr->column,
+                                "Type mismatch for element " + std::to_string(expected_idx + 1) + ": expected " + valueExpectedType->to_string()
+                                    + ", got " + actualValueType->to_string()
+                            );
+                        }
+                        expected_idx++;
+                    } else {
+                         // Key-value entry [key] = value or key = value
+                        _errors.add_error(
+                            expr->line, expr->column, "Key-value entry not allowed when expecting array or tuple type " + expectedType->to_string()
+                        );
+                    }
+                }
+                if (expectedType->kind == Type::Kind::TUPLE and expected_idx < tupleTypes.size())
+                    _errors.add_error(
+                        expr->line, expr->column,
+                        "Not enough elements for tuple type " + expectedType->to_string() + ": expected " + std::to_string(tupleTypes.size())
+                            + ", got " + std::to_string(expected_idx)
+                    );
+
+                return expectedType; // If checks pass, the literal conforms to the expected type
+            } else if (expectedType->kind == Type::Kind::MAP) {
+                TypePtr expectedKeyType = expectedType->key;
+                TypePtr expectedValueType = expectedType->value;
+                for (auto &field : tableLit->fields) {
+                    if (std::holds_alternative<std::unique_ptr<Expression>>(field)) {
+                        _errors.add_error(
+                            expr->line, expr->column, "Array-style entry not allowed when expecting map type " + expectedType->to_string()
+                        );
                     } else {
                         const auto &kv = std::get<TableConstructorExpression::KeyValuePair>(field);
-                        TypePtr keyType = std::holds_alternative<std::string>(kv.key) ? Type::make_string() : check_expression(std::get<std::unique_ptr<Expression>>(kv.key).get());
-                        TypePtr valueType = check_expression(kv.value.get());
-                        if (expectedType->kind == Type::Kind::MAP) {
-                            if (not keyType->is_assignable_to(expectedType->key)) { _errors.add_error(expr->line, expr->column, "Table key type mismatch: expected " + expectedType->key->to_string()); }
-                            if (not valueType->is_assignable_to(expectedType->value)) { _errors.add_error(expr->line, expr->column, "Table value type mismatch: expected " + expectedType->value->to_string()); }
+                        TypePtr actualKeyType;
+                        if (std::holds_alternative<std::string>(kv.key)) {
+                            actualKeyType = Type::make_string(); // Literal string key
                         } else {
-                            _errors.add_error(expr->line, expr->column, "Key-value in array literal not allowed");
+                            actualKeyType = check_expression(std::get<std::unique_ptr<Expression>>(kv.key).get(), expectedKeyType);
+                        }
+                        TypePtr actualValueType = check_expression(kv.value.get(), expectedValueType);
+
+                        if (!actualKeyType->is_assignable_to(expectedKeyType)) {
+                            _errors.add_error(
+                                expr->line, expr->column,
+                                "Map key type mismatch: expected " + expectedKeyType->to_string() + ", got " + actualKeyType->to_string()
+                            );
+                        }
+                        if (!actualValueType->is_assignable_to(expectedValueType)) {
+                            _errors.add_error(
+                                expr->line, expr->column,
+                                "Map value type mismatch: expected " + expectedValueType->to_string() + ", got " + actualValueType->to_string()
+                            );
                         }
                     }
-                    index++;
                 }
                 return expectedType;
-            } else if (expectedType->kind == Type::Kind::MAP) {
-                TypePtr keyType = expectedType->key;
-                TypePtr valType = expectedType->value;
-                for (auto &field : tableLit->fields) {
-                    if (std::holds_alternative<std::unique_ptr<Expression>>(field)) {
-                        _errors.add_error(expr->line, expr->column, "Array entry in map literal not allowed");
-                    } else {
-                        const auto &kv = std::get<TableConstructorExpression::KeyValuePair>(field);
-                        TypePtr kType = std::holds_alternative<std::string>(kv.key) ? Type::make_string() : check_expression(std::get<std::unique_ptr<Expression>>(kv.key).get());
-                        TypePtr vType = check_expression(kv.value.get());
-                        if (not kType->is_assignable_to(keyType)) { _errors.add_error(expr->line, expr->column, "Table key type mismatch"); }
-                        if (not vType->is_assignable_to(valType)) { _errors.add_error(expr->line, expr->column, "Table value type mismatch"); }
-                    }
+            } else if (expectedType->kind == Type::Kind::RECORD) {
+                if (!expectedType->record) {
+                         // Should not happen for a valid RECORD type, but check defensively
+                    _errors.add_error(expr->line, expr->column, "Internal error: Expected record type has no symbol.");
+                    return Type::make_any();
                 }
+
+                std::shared_ptr<TypeSymbol> recordSym = expectedType->record;
+                    // Optional: Keep track of fields provided for <total> checks later if needed
+                std::unordered_map<std::string, bool> providedFields;
+
+                for (const auto &field : tableLit->fields) {
+                    if (std::holds_alternative<std::unique_ptr<Expression>>(field)) {
+                        _errors.add_error(expr->line, expr->column, "Array-style entry not allowed when expecting record type " + recordSym->name);
+                        continue; // Skip to next field
+                    }
+
+                    const auto &kv = std::get<TableConstructorExpression::KeyValuePair>(field);
+                    std::string fieldName;
+
+                    if (std::holds_alternative<std::string>(kv.key)) {
+                        fieldName = std::get<std::string>(kv.key);
+                    } else {
+                        // Allow identifier-style keys like { x = 10 } which are parsed as string keys "x"
+                        // But disallow computed keys like { [expr] = value } for record literals
+                        // This might need adjustment based on how your parser handles `{ ident = value }` vs `{[expr] =
+                        // value}` Assuming your parser converts `ident = value` to a KeyValuePair with key =
+                        // std::string("ident")
+                        _errors.add_error(
+                            expr->line, expr->column, "Record field key must be a string identifier/literal for type " + recordSym->name
+                        );
+                        continue; // Skip checking this field further
+                    }
+
+                    // Check if field exists in the record definition
+                    auto fieldIt = recordSym->fields.find(fieldName);
+                    if (fieldIt == recordSym->fields.end()) {
+                        _errors.add_error(expr->line, expr->column, "Field '" + fieldName + "' does not exist in record type " + recordSym->name);
+                        // Still check the value expression, but maybe against 'any' to avoid cascade errors
+                        check_expression(kv.value.get(), Type::make_any());
+                        continue;
+                    }
+
+                    TypePtr expectedFieldType = fieldIt->second;
+                    // Recursively check the value expression, passing the expected field type
+                    TypePtr actualValueType = check_expression(kv.value.get(), expectedFieldType);
+
+                    if (not actualValueType->is_assignable_to(expectedFieldType)) {
+                        _errors.add_error(
+                            expr->line, expr->column,
+                            "Type mismatch for field '" + fieldName + "' in record " + recordSym->name + ": expected "
+                                + expectedFieldType->to_string() + ", got " + actualValueType->to_string()
+                        );
+                    }
+
+                    // Optional: Mark field as provided
+                    providedFields[fieldName] = true;
+                }
+
                 return expectedType;
             }
+
+            _errors.add_error(expr->line, expr->column, "Cannot assign table literal to expected type " + expectedType->to_string());
+            return expectedType;
         }
         bool hasKV = false;
         TypePtr arrayElemType;
@@ -975,7 +1202,8 @@ TypePtr TypeChecker::check_expression(Expression *expr, const TypePtr &expectedT
             } else {
                 hasKV = true;
                 const auto &kv = std::get<TableConstructorExpression::KeyValuePair>(field);
-                TypePtr kType = std::holds_alternative<std::string>(kv.key) ? Type::make_string() : check_expression(std::get<std::unique_ptr<Expression>>(kv.key).get());
+                TypePtr kType = std::holds_alternative<std::string>(kv.key) ? Type::make_string()
+                                                                            : check_expression(std::get<std::unique_ptr<Expression>>(kv.key).get());
                 TypePtr vType = check_expression(kv.value.get());
                 if (not mapKeyType) {
                     mapKeyType = kType;
