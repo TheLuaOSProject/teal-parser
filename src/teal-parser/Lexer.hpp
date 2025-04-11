@@ -11,7 +11,6 @@
 
 namespace teal::parser
 {
-
     enum class TokenType {
         END_OF_FILE,
         NAME,
@@ -112,8 +111,7 @@ namespace teal::parser
 
         std::optional<Token> teal_to_name() const
         {
-            const auto mkname
-                = [this](const std::string_view &id) { return Token { TokenType::NAME, std::string(id), line, col }; };
+            const auto mkname = [this](const std::string_view &id) { return Token { TokenType::NAME, std::string(id), line, col }; };
             switch (type) {
             case TokenType::TYPE:
                 return mkname("type");
@@ -303,56 +301,43 @@ namespace teal::parser
     public:
         struct InvalidCharacter {
             char character;
+
+            constexpr inline std::string to_string() const { return std::format("Invalid character: '{}'", character); }
         };
 
-        struct UnterminatedLongComment { };
+        struct UnterminatedLongComment {
+            constexpr inline std::string to_string() const { return "Unterminated long comment"; }
+        };
 
-        struct UnterminatedStringLiteral { };
+        struct UnterminatedStringLiteral {
+            constexpr inline std::string to_string() const { return "Unterminated string literal"; }
+        };
 
-        struct UnterminatedLongStringLiteral : UnterminatedStringLiteral { };
+        struct UnterminatedLongStringLiteral : UnterminatedStringLiteral {
+            constexpr inline std::string to_string() const { return "Unterminated long string literal"; }
+        };
 
         struct InvalidLongStringDelimiter {
             char delimiter;
+
+            constexpr inline std::string to_string() const { return std::format("Invalid long string delimiter: '{}'", delimiter); }
         };
 
-        struct Overflow { };
+        struct Overflow {
+            constexpr inline std::string to_string() const { return "Lexer overflow"; }
+        };
 
         struct TooManyErrors {
             size_t error_count;
+
+            constexpr inline std::string to_string() const { return std::format("Too many errors: {}", error_count); }
         };
 
-        struct Error : public teal::parser::Error<
-                           InvalidCharacter, InvalidLongStringDelimiter, UnterminatedLongComment,
-                           UnterminatedStringLiteral, UnterminatedLongStringLiteral, Overflow, TooManyErrors> {
-            int line, column;
+        using Error = teal::parser::Error<
+            InvalidCharacter, InvalidLongStringDelimiter, UnterminatedLongComment, UnterminatedStringLiteral, UnterminatedLongStringLiteral, Overflow,
+            TooManyErrors>;
 
-            constexpr inline std::string to_string() const
-            {
-                switch (kind.index()) {
-                case 0:
-                    return std::format("Invalid character '{}'", std::get<InvalidCharacter>(kind).character);
-                case 1:
-                    return "Invalid long string delimiter";
-                case 2:
-                    return "Unterminated long ocmment";
-                case 3:
-                    return "Unterminated string literal";
-                case 4:
-                    return "Unterminated long string literal";
-                case 5:
-                    return "Overflow";
-                case 6:
-                    return std::format("Too many errors ({})", std::get<TooManyErrors>(kind).error_count);
-                default:
-                    return "Unknown";
-                }
-            }
-        };
-
-        Lexer(const std::string &source) :
-            max_errors(10), src(source), length(source.size()), pos(0), line(1), col(1), tokens(), errors()
-        {
-        }
+        Lexer(const std::string &source) : max_errors(10), src(source), length(source.size()), pos(0), line(1), col(1), tokens(), errors() { }
         std::pair<std::vector<Token>, std::vector<Error>> tokenize();
         std::expected<Token, Error> lex();
 
@@ -366,9 +351,9 @@ namespace teal::parser
         std::vector<Error> errors;
 
         [[gnu::const]]
-        constexpr inline Error make_error(Error::Kind_t err) const
+        constexpr inline Error make_error(Error::Kind_t err, std::source_location loc = std::source_location::current()) const
         {
-            return { { err }, line, col };
+            return Error(err, line, col, loc);
         }
 
         constexpr inline void push_error(Error::Kind_t err) { errors.push_back(make_error(err)); }

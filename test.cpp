@@ -1,5 +1,5 @@
 #include <teal-parser/Parser.hpp>
-#include <teal-parser/TypeChecker.hpp>
+// #include <teal-parser/TypeChecker.hpp>
 
 #include <chrono>
 #include <print>
@@ -94,20 +94,20 @@ int main(int argc, char *argv[])
     std::fwrite(json.data(), 1, json.size(), f);
     std::fclose(f);
 
-    auto tycheck = teal::parser::typecheck::TypeChecker();
-    start = std::chrono::steady_clock::now();
-    tycheck.check(root.get());
-    end = std::chrono::steady_clock::now();
-    len = to_ms(end - start);
-    std::println("Type checking took {}", len);
+    // auto tycheck = teal::parser::typecheck::TypeChecker();
+    // start = std::chrono::steady_clock::now();
+    // tycheck.check(root.get());
+    // end = std::chrono::steady_clock::now();
+    // len = to_ms(end - start);
+    // std::println("Type checking took {}", len);
 
-    auto terrs = tycheck.get_error_reporter().get_errors();
-    if (terrs.size() > 0) {
-        std::println(stderr, "Type checking errors:");
-        for (auto err : terrs) { std::println("    - {} ({}:{}:{} - {}:{})", err.message, filename, err.line, err.column, err.occured_at.file_name(), err.occured_at.line()); }
-        return 1;
-    }
-    std::println("No type errors");
+    // auto terrs = tycheck.get_error_reporter().get_errors();
+    // if (terrs.size() > 0) {
+    //     std::println(stderr, "Type checking errors:");
+    //     for (auto err : terrs) { std::println("    - {} ({}:{}:{} - {}:{})", err.message, filename, err.line, err.column, err.occured_at.file_name(), err.occured_at.line()); }
+    //     return 1;
+    // }
+    // std::println("No type errors");
 
     // start = std::chrono::steady_clock::now();
     // auto lua = obj->to_lua_table();

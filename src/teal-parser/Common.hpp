@@ -16,14 +16,51 @@
 #pragma once
 
 #include <format>
+#include <source_location>
 #include <variant>
 
 namespace teal::parser
 {
+    // concept Stringable = requires(const std::string &s) {
+    //     { s.to_string() } -> std::convertible_to<std::string>;
+    // };
+
+    // For std::visit overloads
     template <typename... T>
+    struct Overload : T... {
+        using T::operator()...;
+    };
+
+    template <typename... T>
+    Overload(T...) -> Overload<T...>;
+
+    template <typename... T> // requires Stringable<T>
     struct Error {
         using Kind_t = std::variant<T...>;
         Kind_t kind;
+        size_t line, column;
+        std::source_location location;
+
+        Error(Kind_t kind, size_t line, size_t column, std::source_location location = std::source_location::current()) :
+            kind(kind), line(line), column(column), location(location)
+        {
+        }
+
+        constexpr inline std::string to_string() const
+        {
+            return std::visit(
+                Overload {
+                    [this](const auto &e) {
+                        if constexpr (requires { e.to_string(); }) {
+                            return e.to_string();
+                        } else {
+                            return std::format("[{}:{}] Error at {}:{} - {}", location.file_name(), location.line(), line, column, e);
+                        }
+                    },
+                },
+                kind
+            );
+        }
     };
 }
 
