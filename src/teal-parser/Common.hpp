@@ -21,9 +21,8 @@
 
 namespace teal::parser
 {
-    // concept Stringable = requires(const std::string &s) {
-    //     { s.to_string() } -> std::convertible_to<std::string>;
-    // };
+    // template<typename T, typename ...Variant>
+    // concept IsInVariant = std::bool_constant<(std::is_same_v<T, Variant> or ...)>;
 
     // For std::visit overloads
     template <typename... T>
@@ -64,7 +63,7 @@ namespace teal::parser
     };
 }
 
-template <typename TExpected, typename... T>
+template <typename TExpected, typename... T> 
 static constexpr bool operator->*(const std::variant<T...> &variant, TExpected *expected)
 {
     try {
