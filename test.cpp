@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     len = to_ms(end - start);
     std::println("Type checking took {}", len);
 
-    auto terrs = tycheck.getErrorReporter().getErrors();
+    auto terrs = tycheck.get_error_reporter().get_errors();
     if (terrs.size() > 0) {
         std::println(stderr, "Type checking errors:");
         for (auto err : terrs) { std::println("    - {} ({}:{}:{})", err.message, filename, err.line, err.column); }

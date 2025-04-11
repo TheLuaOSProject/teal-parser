@@ -40,8 +40,22 @@ namespace teal::parser::ast {
                 else return Value::from(val->serialise());
             }
 
+            template <Serialisable T>
+            static inline std::unique_ptr<Value> from(const std::shared_ptr<T> &val)
+            {
+                if (val == nullptr) return std::make_unique<Value>(std::monostate());
+                else return Value::from(val->serialise());
+            }
+
             template <typename T>
             static inline std::unique_ptr<Value> from(const std::unique_ptr<T> &val)
+            {
+                if (val == nullptr) return std::make_unique<Value>(std::monostate());
+                else return Value::from(std::move(*val.get()));
+            }
+
+            template <typename T>
+            static inline std::unique_ptr<Value> from(const std::shared_ptr<T> &val)
             {
                 if (val == nullptr) return std::make_unique<Value>(std::monostate());
                 else return Value::from(std::move(*val.get()));
@@ -65,6 +79,17 @@ namespace teal::parser::ast {
                 res.reserve(arr.size());
 
                 for (const auto &v : arr) { res.push_back(Value::from(v)); }
+
+                return std::make_unique<Value>(std::move(res));
+            }
+
+            template <>
+            std::unique_ptr<Value> from<bool>(const std::vector<bool> &arr)
+            {
+                auto res = Array();
+                res.reserve(arr.size());
+
+                for (auto v : arr) { res.push_back(std::make_unique<Value>(bool(v))); }
 
                 return std::make_unique<Value>(std::move(res));
             }

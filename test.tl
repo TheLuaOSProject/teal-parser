@@ -3,6 +3,23 @@ local record Point
     y: integer
 end
 
-local p: Point = { x = 1, y = 2 }
+local record MyStruct
+    position: Point
+    size: Point
 
-p.x = 3.21
+    name: string
+    age: integer
+
+    is_active: boolean | string
+end
+
+
+local v: MyStruct = {
+    position = { x = 10, y = 20 },
+    size = { x = 30, y = 40 },
+
+    name = "John Doe",
+    age = 25,
+
+    is_active = true
+}

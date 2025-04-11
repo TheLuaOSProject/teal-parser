@@ -11,46 +11,49 @@
 
 namespace teal::parser::typecheck
 {
-
     struct Type;
     struct TypeSymbol;
-    struct TypeVarInfo;
+    struct TypeVariableInfo;
     using TypePtr = std::shared_ptr<Type>;
 
     struct Type {
         enum class Kind {
-            Nil,
-            Boolean,
-            Number,
-            Integer,
-            String,
-            Any,
-            Unknown,
-            Union,
-            Function,
-            Record,
-            Enum,
-            Array,
-            Map,
-            Tuple,
-            TypeVar
+            NIL,
+            BOOLEAN,
+            NUMBER,
+            INTEGER,
+            STRING,
+            ANY,
+            UNKNOWN,
+
+            UNION,
+            FUNCTION,
+            RECORD,
+            INTERFACE,
+            ENUM,
+            ARRAY,
+            MAP,
+            TUPLE,
+            TYPE_VARIABLE
         };
         Kind kind;
         // Union type members
         std::vector<TypePtr> union_members;
         // Function type signature
-        struct FunctionSig {
-            std::vector<TypePtr> param_types;
-            std::vector<bool> param_optional;
-            bool param_varargs;
+        struct FunctionSignature {
+            std::vector<TypePtr> parameter_types;
+            std::vector<bool> optional_parameters;
+            bool is_varadict;
             std::vector<TypePtr> return_types;
-            bool return_varargs;
-            std::vector<TypePtr> type_params;
+            bool is_varadict_return;
+            std::vector<TypePtr> type_parameters;
+
+            ast::serialisation::Object serialise() const;
         };
-        std::unique_ptr<FunctionSig> func;
+        std::unique_ptr<FunctionSignature> function;
         // Record or interface type
         std::shared_ptr<TypeSymbol> record;
-        std::vector<TypePtr> type_args;
+        std::vector<TypePtr> type_arguments;
         // Enum type
         std::shared_ptr<TypeSymbol> enum_type;
         // Array type
@@ -61,42 +64,41 @@ namespace teal::parser::typecheck
         // Tuple type
         std::vector<TypePtr> tuple_types;
         // Generic type variable
-        std::shared_ptr<TypeVarInfo> type_var;
+        std::shared_ptr<TypeVariableInfo> type_variable;
 
         Type(Kind k) : kind(k) { }
-        static TypePtr makeNil();
-        static TypePtr makeBoolean();
-        static TypePtr makeNumber();
-        static TypePtr makeInteger();
-        static TypePtr makeString();
-        static TypePtr makeAny();
-        static TypePtr makeUnknown();
-        static TypePtr makeUnion(const std::vector<TypePtr> &members);
-        static TypePtr makeFunction(
-            const std::vector<TypePtr> &params, const std::vector<bool> &opt, bool varargs,
-            const std::vector<TypePtr> &rets, bool ret_varargs, const std::vector<TypePtr> &type_params = {}
-        );
-        static TypePtr makeRecord(std::shared_ptr<TypeSymbol> symbol, const std::vector<TypePtr> &type_args = {});
-        static TypePtr makeEnum(std::shared_ptr<TypeSymbol> symbol);
-        static TypePtr makeArray(TypePtr element_type);
-        static TypePtr makeMap(TypePtr key_type, TypePtr value_type);
-        static TypePtr makeTuple(const std::vector<TypePtr> &element_types);
-        static TypePtr makeTypeVar(const std::string &name, TypePtr constraint = nullptr);
+        static TypePtr make_nil();
+        static TypePtr make_boolean();
+        static TypePtr make_number();
+        static TypePtr make_integer();
+        static TypePtr make_string();
+        static TypePtr make_any();
+        static TypePtr make_unknown();
+        static TypePtr make_union(const std::vector<TypePtr> &members);
+        static TypePtr make_function(const std::vector<TypePtr> &params, const std::vector<bool> &opt, bool varargs, const std::vector<TypePtr> &rets, bool ret_varargs, const std::vector<TypePtr> &type_params = {});
+        static TypePtr make_record(std::shared_ptr<TypeSymbol> symbol, const std::vector<TypePtr> &type_args = {});
+        static TypePtr make_enum(std::shared_ptr<TypeSymbol> symbol);
+        static TypePtr make_array(TypePtr element_type);
+        static TypePtr make_map(TypePtr key_type, TypePtr value_type);
+        static TypePtr make_tuple(const std::vector<TypePtr> &element_types);
+        static TypePtr make_type_variable(const std::string &name, TypePtr constraint = nullptr);
 
         bool equals(const TypePtr &other) const;
-        bool isAssignableTo(const TypePtr &target) const;
-        std::string toString() const;
+        bool is_assignable_to(const TypePtr &target) const;
+        std::string to_string() const;
+
+        ast::serialisation::Object serialise() const;
     };
 
     struct TypeSymbol {
-        enum class Kind { Record, Interface, Enum, Alias, TypeVar };
+        enum class Kind { RECORD, INTERFACE, ENUM, ALIAS, TYPE_VARIABLE };
         Kind kind;
         std::string name;
         bool is_interface;
         std::unordered_map<std::string, TypePtr> fields;
         TypePtr array_element_type;
         std::vector<TypePtr> interfaces;
-        std::vector<TypePtr> type_params;
+        std::vector<TypePtr> type_parameters;
         std::vector<std::string> enum_values;
         TypePtr alias_target;
         std::shared_ptr<TypeSymbol> parent;
@@ -107,16 +109,17 @@ namespace teal::parser::typecheck
         TypePtr type;
 
         TypeSymbol(Kind k, std::string nm) : kind(k), name(std::move(nm)), is_interface(false), parent(nullptr) { }
+
+        ast::serialisation::Object serialise() const;
     };
 
-    struct TypeVarInfo {
+    struct TypeVariableInfo {
         std::string name;
         TypePtr constraint;
-        std::shared_ptr<TypeSymbol> ownerTypeSymbol;
-        TypeVarInfo(std::string nm, TypePtr constr = nullptr, std::shared_ptr<TypeSymbol> owner = nullptr) :
-            name(std::move(nm)), constraint(constr), ownerTypeSymbol(owner)
-        {
-        }
+        std::shared_ptr<TypeSymbol> owner_type;
+        TypeVariableInfo(std::string nm, TypePtr constr = nullptr, std::shared_ptr<TypeSymbol> owner = nullptr) : name(std::move(nm)), constraint(constr), owner_type(owner) { }
+
+        ast::serialisation::Object serialise() const;
     };
 
 }

@@ -20,18 +20,15 @@ namespace teal::parser::typecheck
     class SymbolTable {
     public:
         SymbolTable();
-        void pushScope();
-        void popScope();
-        bool define(
-            const std::string &name, const TypePtr &type, bool is_const = false, bool is_global = false,
-            const std::optional<std::string> &attr = std::nullopt
-        );
+        void push_scope();
+        void pop_scope();
+        bool define(const std::string &name, const TypePtr &type, bool is_const = false, bool is_global = false, const std::optional<std::string> &attr = std::nullopt);
         VarInfo *lookup(const std::string &name);
-        VarInfo *lookupLocal(const std::string &name);
-        VarInfo *lookupGlobal(const std::string &name);
+        VarInfo *lookup_local(const std::string &name);
+        VarInfo *lookup_global(const std::string &name);
 
     private:
-        std::vector<std::unordered_map<std::string, VarInfo>> scopes;
+        std::vector<std::unordered_map<std::string, VarInfo>> _scopes;
     };
 
 }

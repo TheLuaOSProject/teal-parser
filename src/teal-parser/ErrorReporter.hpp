@@ -6,7 +6,6 @@
 
 namespace teal::parser::typecheck
 {
-
     struct Error {
         size_t line;
         size_t column;
@@ -17,13 +16,13 @@ namespace teal::parser::typecheck
 
     class ErrorReporter {
     public:
-        void addError(size_t line, size_t column, const std::string &message);
+        void add_error(size_t line, size_t column, const std::string &message);
         bool empty() const;
-        const std::vector<Error> &getErrors() const;
-        std::string formatErrors() const;
+        const std::vector<Error> &get_errors() const;
+        std::string format_errors() const;
 
     private:
-        std::vector<Error> errors;
+        std::vector<Error> _errors;
     };
 
 }
