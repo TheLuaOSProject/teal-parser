@@ -1,4 +1,5 @@
 #include <teal-parser/Parser.hpp>
+#include <teal-parser/TypeChecker.hpp>
 
 #include <chrono>
 #include <print>
@@ -19,12 +20,14 @@ _LIBCPP_END_NAMESPACE_STD
 
 int main(int argc, char *argv[])
 {   std::string src = TL_SRC;
+    std::string_view filename = "tl.tl";
     if (argc > 1) {
         auto f = std::fopen(argv[1], "r");
         if (f == nullptr) {
             std::println(stderr, "Failed to open `{}`", argv[1]);
             return 1;
         }
+        filename = argv[1];
 
         std::fseek(f, 0, SEEK_END);
 
@@ -53,7 +56,7 @@ int main(int argc, char *argv[])
     if (errs.size() > 0) {
         std::println(stderr, "Lexing errors:");
         for (auto err : errs) {
-            std::println("    - {} (tl.tl:{}:{})", err.to_string(), err.line, err.column);
+            std::println("    - {} ({}:{}:{})", err.to_string(), filename,  err.line, err.column);
         }
         return 1;
     }
@@ -70,7 +73,7 @@ int main(int argc, char *argv[])
     if (perrs.size() > 0) {
         std::println(stderr, "Parser errors:");
         for (auto err : perrs) {
-            std::println("    - {} (tl.tl:{}:{})", err.to_string(), err.line, err.column);
+            std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column);
         }
         return 1;
     }
@@ -98,19 +101,35 @@ int main(int argc, char *argv[])
     std::fwrite(json.data(), 1, json.size(), f);
     std::fclose(f);
 
-
+    auto tycheck = teal::parser::typecheck::TypeChecker();
     start = std::chrono::steady_clock::now();
-    auto lua = obj->to_lua_table();
+    tycheck.check(root.get());
     end = std::chrono::steady_clock::now();
     len = to_ms(end - start);
-    std::println("Lua took {}", len);
+    std::println("Type checking took {}", len);
 
-    f = std::fopen("AST.lua", "w+b");
-    if (f == nullptr) {
-        std::println(stderr, "Failed to open AST.lua");
-        return 0;;
+    auto terrs = tycheck.getErrorReporter().getErrors();
+    if (terrs.size() > 0) {
+        std::println(stderr, "Type checking errors:");
+        for (auto err : terrs) {
+            std::println("    - {} ({}:{}:{})", err.message, filename, err.line, err.column);
+        }
+        return 1;
     }
+    std::println("No type errors");
 
-    std::print(f, "return {}", lua);
-    std::fclose(f);
+    // start = std::chrono::steady_clock::now();
+    // auto lua = obj->to_lua_table();
+    // end = std::chrono::steady_clock::now();
+    // len = to_ms(end - start);
+    // std::println("Lua took {}", len);
+
+    // f = std::fopen("AST.lua", "w+b");
+    // if (f == nullptr) {
+    //     std::println(stderr, "Failed to open AST.lua");
+    //     return 0;;
+    // }
+
+    // std::print(f, "return {}", lua);
+    // std::fclose(f);
 }

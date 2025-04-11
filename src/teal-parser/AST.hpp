@@ -56,7 +56,7 @@ namespace teal::parser::ast
             }
 
             template<Serialisable T>
-            static inline std::unique_ptr<Value> from(const std::vector<T> &arr)
+            static std::unique_ptr<Value> from(const std::vector<T> &arr)
             {
                 auto res = Array();
                 res.reserve(arr.size());
@@ -69,7 +69,7 @@ namespace teal::parser::ast
             }
 
             template<typename T>
-            static inline std::unique_ptr<Value> from(const std::vector<T> &arr)
+            static std::unique_ptr<Value> from(const std::vector<T> &arr)
             {
                 auto res = Array();
                 res.reserve(arr.size());
@@ -82,7 +82,7 @@ namespace teal::parser::ast
             }
 
             template<Serialisable T>
-            static inline std::unique_ptr<Value> from(const std::vector<std::unique_ptr<T>> &arr)
+            static std::unique_ptr<Value> from(const std::vector<std::unique_ptr<T>> &arr)
             {
                 auto res = Array();
                 res.reserve(arr.size());
@@ -99,7 +99,7 @@ namespace teal::parser::ast
             }
 
             template<typename T>
-            static inline std::unique_ptr<Value> from(const std::vector<std::unique_ptr<T>> &arr)
+            static std::unique_ptr<Value> from(const std::vector<std::unique_ptr<T>> &arr)
             {
                 auto res = Array();
                 res.reserve(arr.size());
@@ -285,9 +285,10 @@ namespace teal::parser::ast
         { return dynamic_cast<const T *>(this) != nullptr; }
     };
 
-    struct Block : ASTNode {
+    // Block shouldnt be a statement?
+    struct Block : Statement {
         std::vector<std::unique_ptr<Statement>> statements;
-        Block(const Token &tk): ASTNode(tk) {}
+        Block(const Token &tk): Statement(tk) {}
 
         virtual serialisation::Object serialise() const override;
     };

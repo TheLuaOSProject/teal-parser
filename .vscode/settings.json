@@ -1,3 +1,7 @@
 {
-    "licenser.license": "LGPLv3"
+    "licenser.license": "LGPLv3",
+    "explorer.fileNesting.patterns": {
+        "*.hpp": "${capture}.cpp",
+    },
+    "explorer.fileNesting.enabled": true
 }
