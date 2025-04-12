@@ -15,6 +15,7 @@
 
 #include "AST.hpp"
 
+#include <charconv>
 #include <sstream>
 
 using namespace teal::parser::ast;
@@ -73,13 +74,35 @@ Object ASTNode::serialise() const
 
 $serialisation(NameExpression)({ $field(name); });
 
+// _LIBCPP_BEGIN_NAMESPACE_STD
+
+// template<>
+// __from_chars_result<double> __from_chars_floating_point<double>([[clang::noescape]] char const *start, [[clang::noescape]] char const *end, chars_format fmt)
+// template __from_chars_result<double> __from_chars_floating_point(
+//     _LIBCPP_NOESCAPE const char* __first, _LIBCPP_NOESCAPE const char* __last, chars_format __fmt)
+// {
+//     auto d
+// }
+
+// _LIBCPP_END_NAMESPACE_STD
+
+// std::__1::__from_chars_result<double> std::__1::__from_chars_floating_point<double>(char const*, char const*, std::__1::chars_format)
+
 $serialisation(NumberExpression)({
     $field(value, ({
-               auto v = Number();
-               if (value.find('.') != std::string::npos) v = std::stod(value);
-               else v = std::stoll(value);
-               v;
-           }));
+        auto v = Number();
+        if (value.find('.') != std::string::npos) {
+            // double d = 0;
+            // auto _ = std::from_chars(value.data(), value.data() + value.size(), d);
+            // v = d; //TODO: check res
+            v = std::stod(std::string(value)); //TODO: no copy
+        } else {
+            long d = 0;
+            auto _ = std::from_chars(value.data(), value.data() + value.size(), d);
+            v = d; //TODO: check res
+        }
+        v;
+    }));
 });
 
 $serialisation(StringExpression)({ $field(value); });
@@ -171,7 +194,7 @@ $serialisation(IsTypeExpression)({
 $serialisation(TableConstructorExpression::KeyValuePair, Object())({
     $field(key, ({
                auto v = Value();
-               if (std::holds_alternative<std::string>(key)) v = std::get<std::string>(key);
+               if (std::holds_alternative<std::string_view>(key)) v = std::get<std::string_view>(key);
                else v = std::get<std::unique_ptr<Expression>>(key)->serialise();
                std::move(v);
            }));
@@ -400,81 +423,134 @@ template <class... Ts>
 Overload(Ts...) -> Overload<Ts...>;
 
 template <typename Variant>
-static constexpr auto match(Variant &&var)
+static constexpr inline auto match(Variant &&var)
 {
-    return [&var]<typename... T>(T &&...matchers) {
-        return std::visit(Overload { std::forward<T>(matchers)... }, std::forward<Variant>(var));
-    };
+    return [&var]<typename... T>(T &&...matchers) constexpr { return std::visit(Overload { std::forward<T>(matchers)... }, std::forward<Variant>(var)); };
 }
 
-template <typename T>
-constexpr T replace_all(T s, std::string_view from, std::string_view to)
+std::string escape_string(std::string_view str)
 {
-    size_t pos = 0;
-    while ((pos = s.find(from, pos)) != std::string::npos) {
-        s.replace(pos, from.size(), to);
-        pos += to.size();
+    std::string result;
+    result.reserve(str.size() + 8); // guess, usually small growth
+    for (char c : str) {
+        switch (c) {
+            case '\\': result += "\\\\"; break;
+            case '\"': result += "\\\""; break;
+            case '\b': result += "\\b"; break;
+            case '\f': result += "\\f"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default: result += c; break;
+        }
     }
-    return s;
+    return result;
 }
 
-struct ReplaceAdaptor {
-    std::string_view from;
-    std::string_view to;
-};
+// Forward declaration of the static helper.
 
-template <typename Range>
-constexpr inline auto operator|(Range &&range, const ReplaceAdaptor &adaptor)
+static constexpr inline void json_impl(const Value &value, std::string &out)
 {
-    return replace_all(std::string(std::begin(range), std::end(range)), adaptor.from, adaptor.to);
-}
-constexpr inline auto replace(std::string_view from, std::string_view to) {
-    return ReplaceAdaptor { from, to }; }
-
-// Properly escape the string so it can be properly used for JSON
-std::string escape_string(const std::string &str)
-{
-    return str | replace("\\", "\\\\") | replace("\"", "\\\"") | replace("\b", "\\b") | replace("\f", "\\f")
-        | replace("\n", "\\n") | replace("\r", "\\r") | replace("\t", "\\t");
-}
-
-std::string Value::to_json()
-{
-    return match(*this)(
-        [](const std::string &v) { return std::format("\"{}\"", escape_string(v)); },
-        [](bool v) { return v ? "true"s : "false"s; },
-        [](const Number &n) {
-            if (std::holds_alternative<double>(n)) {
-                return std::to_string(std::get<double>(n));
-            } else {
-                return std::to_string(std::get<long long>(n));
+    return match(value) (
+        // For strings, surround by quotes and escape characters.
+        [&out](std::string_view s) {
+            out.push_back('\"');
+            out.append(escape_string(s));
+            out.push_back('\"');
+        },
+        // For booleans, emit true or false.
+        [&out](bool b) {
+            out.append(b ? "true" : "false");
+        },
+        // For numbers, use std::format_to to append the textual representation.
+        [&out](const Number &num) {
+            std::visit([&out](auto n) {
+                // Append formatted number directly into out.
+                std::format_to(std::back_inserter(out), "{}", n);
+            }, num);
+        },
+        // For null values.
+        [&out](std::monostate) {
+            out.append("null");
+        },
+        // For objects, iterate through key-value pairs.
+        [&out](const Object &obj) {
+            out.push_back('{');
+            bool first = true;
+            for (const auto &pair : obj) {
+                if (not first)
+                    out.append(", ");
+                first = false;
+                out.push_back('\"');
+                out.append(escape_string(pair.first));
+                out.append("\": ");
+                
+                json_impl(*pair.second, out);
             }
+            out.push_back('}');
         },
-        [](std::monostate) { return "null"s; },
-        [](const Object &v) {
-            auto obj = "{"s;
-            for (const auto &[k, v] : v) { obj += std::format("\"{}\": {}, ", k, v->to_json()); }
-            if (obj.size() > 1) {
-                obj.resize(obj.size() - 2); // remove last comma and space
+        
+        [&out](const Array &arr) {
+            out.push_back('[');
+            bool first = true;
+            for (const auto &elem : arr) {
+                if (!first)
+                    out.append(", ");
+                first = false;
+                json_impl(*elem, out);
             }
-            obj += "}";
-            return obj;
-        },
-        [](const Array &v) {
-            auto arr = "["s;
-            for (const auto &v : v) { arr += std::format("{}, ", v->to_json()); }
-            if (arr.size() > 1) { arr.resize(arr.size() - 2); }
-            arr += "]";
-            return arr;
-        },
-        [](const auto &x) { throw std::runtime_error(std::format("Unknown node of type {}", typeid(x).name())); }
+            out.push_back(']');
+        }
     );
 }
 
-std::string Value::to_lua_table()
+// The public to_json() now simply creates a result buffer and calls the helper.
+std::string Value::to_json() const
+{
+    auto out = std::string();
+    out.reserve(256); // Reserve an initial size to reduce reallocations.
+    json_impl(*this, out);
+    return out;
+}
+
+// std::string Value::to_json()
+// {
+//     return match(*this)(
+//         [](std::string_view v) { return std::format("\"{}\"", escape_string(v)); },
+//         [](bool v) { return v ? "true"s : "false"s; },
+//         [](const Number &n) {
+//             if (std::holds_alternative<double>(n)) {
+//                 return std::to_string(std::get<double>(n));
+//             } else {
+//                 return std::to_string(std::get<long long>(n));
+//             }
+//         },
+//         [](std::monostate) { return "null"s; },
+//         [](const Object &v) {
+//             auto obj = "{"s;
+//             for (const auto &[k, v] : v) { obj += std::format("\"{}\": {}, ", k, v->to_json()); }
+//             if (obj.size() > 1) {
+//                 obj.resize(obj.size() - 2); // remove last comma and space
+//             }
+//             obj += "}";
+//             return obj;
+//         },
+//         [](const Array &v) {
+//             auto arr = "["s;
+//             for (const auto &v : v) { arr += std::format("{}, ", v->to_json()); }
+//             if (arr.size() > 1) { arr.resize(arr.size() - 2); }
+//             arr += "]";
+//             return arr;
+//         }
+//         // ,
+//         // [](const auto &x) { throw std::runtime_error(std::format("Unknown node of type {}", typeid(x).name())); }
+//     );
+// }
+
+std::string Value::to_lua_table() const
 {
     return match(*this)(
-        [](const std::string &v) { return std::format("[===[{}]===]", v); },
+        [](std::string_view v) { return std::format("[===[{}]===]", v); },
         [](bool v) { return v ? "true"s : "false"s; },
         [](const Number &n) {
             if (std::holds_alternative<double>(n)) {

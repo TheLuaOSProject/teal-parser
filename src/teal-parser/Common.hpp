@@ -54,7 +54,7 @@ namespace teal::parser
                         if constexpr (requires { e.to_string(); }) {
                             return e.to_string();
                         } else {
-                            return std::format("[{}:{}] Error at {}:{} - {}", location.file_name(), location.line(), line, column, e);
+                            return std::format("[{}:{}] Error at {}:{} - {}", location.file_name(), location.line(), line, column, typeid(e).name());
                         }
                     },
                 },

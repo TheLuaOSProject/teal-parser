@@ -238,7 +238,7 @@ namespace teal::parser
         std::unique_ptr<ast::Statement> parse_enum_decl(ast::Visibility vis);
         std::unique_ptr<ast::Statement> parse_type_alias_decl(ast::Visibility vis);
         std::vector<ast::VariableDeclarationStatement::Name> parse_att_name_list();
-        std::vector<std::string> parse_name_list();
+        std::vector<std::string_view> parse_name_list();
         std::unique_ptr<ast::Expression> parse_expression();
         std::vector<std::unique_ptr<ast::Expression>> parse_expression_list();
         std::unique_ptr<ast::Expression> parse_prefix_expression();

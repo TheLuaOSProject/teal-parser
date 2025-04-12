@@ -11,7 +11,7 @@
 namespace teal::parser::ast {
     namespace serialisation {
         struct Value;
-        using Object = std::unordered_map<std::string, std::unique_ptr<Value>>;
+        using Object = std::unordered_map<std::string_view, std::unique_ptr<Value>>;
         using Array = std::vector<std::unique_ptr<Value>>;
         using Number = std::variant<long long, double>;
 
@@ -20,7 +20,7 @@ namespace teal::parser::ast {
             { v.serialise() } -> std::same_as<Object>;
         };
 
-        using ValueData = std::variant<std::string, bool, Number, Object, Array, std::monostate>;
+        using ValueData = std::variant<std::string_view, bool, Number, Object, Array, std::monostate>;
 
         struct Value : public ValueData {
             using ValueData::variant;
@@ -149,8 +149,8 @@ namespace teal::parser::ast {
                 }
             }
 
-            std::string to_json();
-            std::string to_lua_table();
+            std::string to_json() const;
+            std::string to_lua_table() const;
         };
     }
 
@@ -203,20 +203,20 @@ namespace teal::parser::ast {
 
 // Expression AST nodes
     struct NameExpression : Expression {
-        std::string name;
-        NameExpression(const Token &tk, std::string &&n) : Expression(tk), name(std::move(n)) { }
+        std::string_view name;
+        NameExpression(const Token &tk, std::string_view n) : Expression(tk), name(std::move(n)) { }
 
         virtual serialisation::Object serialise() const override;
     };
     struct NumberExpression : Expression {
-        std::string value;
-        NumberExpression(const Token &tk, std::string &&v) : Expression(tk), value(std::move(v)) { }
+        std::string_view value;
+        NumberExpression(const Token &tk, std::string_view v) : Expression(tk), value(std::move(v)) { }
 
         virtual serialisation::Object serialise() const override;
     };
     struct StringExpression : Expression {
-        std::string value;
-        StringExpression(const Token &tk, std::string &&v) : Expression(tk), value(std::move(v)) { }
+        std::string_view value;
+        StringExpression(const Token &tk, std::string_view v) : Expression(tk), value(std::move(v)) { }
 
         virtual serialisation::Object serialise() const override;
     };
@@ -238,9 +238,9 @@ namespace teal::parser::ast {
     }; // represents "..."
     struct FunctionCallExpression : Expression {
         std::unique_ptr<Expression> base;
-        std::string method_name; // method name if invoked with ':'
+        std::string_view method_name; // method name if invoked with ':'
         std::vector<std::unique_ptr<Expression>> arguments;
-        FunctionCallExpression(const Token &tk, std::unique_ptr<Expression> &&base_expr, std::string &&method = "") :
+        FunctionCallExpression(const Token &tk, std::unique_ptr<Expression> &&base_expr, std::string_view method = "") :
             Expression(tk), base(std::move(base_expr)), method_name(std::move(method))
         {
         }
@@ -259,8 +259,8 @@ namespace teal::parser::ast {
     };
     struct FieldExpression : Expression {
         std::unique_ptr<Expression> object;
-        std::string field;
-        FieldExpression(const Token &tk, std::unique_ptr<Expression> &&obj, std::string &&fld) :
+        std::string_view field;
+        FieldExpression(const Token &tk, std::unique_ptr<Expression> &&obj, std::string_view fld) :
             Expression(tk), object(std::move(obj)), field(std::move(fld))
         {
         }
@@ -318,8 +318,8 @@ namespace teal::parser::ast {
     };
 
     struct GenericTypeParameter {
-        std::string name;
-        std::optional<std::string> is;
+        std::string_view name;
+        std::optional<std::string_view> is;
 
         serialisation::Object serialise() const;
     };
@@ -328,7 +328,7 @@ namespace teal::parser::ast {
     struct FunctionBody : ASTNode {
         std::vector<GenericTypeParameter> type_parameters;
         struct Parameter {
-            std::string name;
+            std::string_view name;
             bool is_varadict;
             bool is_optional;
             std::unique_ptr<TypeNode> type;
@@ -379,7 +379,7 @@ namespace teal::parser::ast {
 //{ "this", is = "a", [get_value()] = "table" }
     struct TableConstructorExpression : Expression {
         struct KeyValuePair {
-            std::variant<std::string, std::unique_ptr<Expression>> key;
+            std::variant<std::string_view, std::unique_ptr<Expression>> key;
             std::unique_ptr<Expression> value;
             std::unique_ptr<TypeNode> type = nullptr; // can be null :)
 
@@ -396,16 +396,16 @@ namespace teal::parser::ast {
 
 // Type AST nodes
     struct BasicTypeNode : TypeNode {
-        std::string name;
-        BasicTypeNode(const Token &tk, std::string &&n) : TypeNode(tk), name(std::move(n)) { }
+        std::string_view name;
+        BasicTypeNode(const Token &tk, std::string_view n) : TypeNode(tk), name(std::move(n)) { }
 
         virtual serialisation::Object serialise() const override;
     };
     struct NominalTypeNode : TypeNode {
-        std::vector<std::string> name_parts;
+        std::vector<std::string_view> name_parts;
         std::vector<std::unique_ptr<TypeNode>> type_arguments;
         NominalTypeNode(
-            const Token &tk, std::vector<std::string> &&parts, std::vector<std::unique_ptr<TypeNode>> &&args = {}) :
+            const Token &tk, std::vector<std::string_view> &&parts, std::vector<std::unique_ptr<TypeNode>> &&args = {}) :
             TypeNode(tk), name_parts(std::move(parts)), type_arguments(std::move(args))
         {
         }
@@ -423,7 +423,7 @@ namespace teal::parser::ast {
     struct FunctionTypeNode : TypeNode {
         std::vector<GenericTypeParameter> type_parameters;
         struct ParameterType {
-            std::optional<std::string> name;
+            std::optional<std::string_view> name;
             bool is_optional;
             std::unique_ptr<TypeNode> type;
 
@@ -454,12 +454,12 @@ namespace teal::parser::ast {
         struct Entry {
             enum class Kind { FIELD, USERDATA, TYPE_ALIAS, RECORD, ENUM, INTERFACE } entry_kind;
             bool is_metamethod;
-            std::optional<std::string> name;
-            std::optional<std::string> key_literal;
+            std::optional<std::string_view> name;
+            std::optional<std::string_view> key_literal;
             std::unique_ptr<TypeNode> type;
-            std::string type_name;
+            std::string_view type_name;
             std::unique_ptr<TypeNode> type_value;
-            std::string nested_name;
+            std::string_view nested_name;
             std::unique_ptr<ASTNode> nested_body;
         // Entry() : isMetamethod(false) {}
 
@@ -480,15 +480,15 @@ namespace teal::parser::ast {
         virtual serialisation::Object serialise() const override;
     };
     struct TypeEnumNode : TypeNode {
-        std::vector<std::string> elements;
-        TypeEnumNode(const Token &tk, std::vector<std::string> &&elems) : TypeNode(tk), elements(std::move(elems)) { }
+        std::vector<std::string_view> elements;
+        TypeEnumNode(const Token &tk, std::vector<std::string_view> &&elems) : TypeNode(tk), elements(std::move(elems)) { }
 
         virtual serialisation::Object serialise() const override;
     };
     struct RequireTypeNode : TypeNode {
-        std::string module_name;
-        std::vector<std::string> type_names;
-        RequireTypeNode(const Token &tk, std::string &&mod, std::vector<std::string> &&names) :
+        std::string_view module_name;
+        std::vector<std::string_view> type_names;
+        RequireTypeNode(const Token &tk, std::string_view mod, std::vector<std::string_view> &&names) :
             TypeNode(tk), module_name(std::move(mod)), type_names(std::move(names))
         {
         }
@@ -509,14 +509,14 @@ namespace teal::parser::ast {
         virtual serialisation::Object serialise() const override;
     };
     struct GotoStatement : Statement {
-        std::string label;
-        GotoStatement(const Token &tk, std::string &&lbl) : Statement(tk), label(std::move(lbl)) { }
+        std::string_view label;
+        GotoStatement(const Token &tk, std::string_view lbl) : Statement(tk), label(std::move(lbl)) { }
 
         virtual serialisation::Object serialise() const override;
     };
     struct LabelStatement : Statement {
-        std::string name;
-        LabelStatement(const Token &tk, std::string &&n) : Statement(tk), name(std::move(n)) { }
+        std::string_view name;
+        LabelStatement(const Token &tk, std::string_view n) : Statement(tk), name(std::move(n)) { }
 
         virtual serialisation::Object serialise() const override;
     };
@@ -557,7 +557,7 @@ namespace teal::parser::ast {
         virtual serialisation::Object serialise() const override;
     };
     struct ForNumericStatement : Statement {
-        std::string variable_name;
+        std::string_view variable_name;
         struct {
             std::unique_ptr<Expression> start, end, step;
         } expressions;
@@ -568,7 +568,7 @@ namespace teal::parser::ast {
         virtual serialisation::Object serialise() const override;
     };
     struct ForInStatement : Statement {
-        std::vector<std::string> names;
+        std::vector<std::string_view> names;
         std::vector<std::unique_ptr<Expression>> exprs;
         std::unique_ptr<Block> body;
 
@@ -593,8 +593,8 @@ namespace teal::parser::ast {
 
     struct FunctionDeclarationStatement : Statement {
         Visibility visibility;
-        std::vector<std::string> name_path;
-        std::string method_name;
+        std::vector<std::string_view> name_path;
+        std::string_view method_name;
         bool is_method;
         bool is_macro;
         std::unique_ptr<FunctionBody> body;
@@ -608,8 +608,8 @@ namespace teal::parser::ast {
     struct VariableDeclarationStatement : Statement {
         Visibility visibility;
         struct Name { // name with optional attribute (for <attr>)
-            std::string name;
-            std::optional<std::string> attribute;
+            std::string_view name;
+            std::optional<std::string_view> attribute;
 
             serialisation::Object serialise() const;
         };
@@ -625,11 +625,11 @@ namespace teal::parser::ast {
     struct RecordDeclarationStatement : Statement {
         bool is_interface;
         Visibility visibility;
-        std::string name;
+        std::string_view name;
         std::unique_ptr<RecordBody> body;
 
         RecordDeclarationStatement(
-            const Token &tk, bool interface, Visibility vis, std::string &&n, std::unique_ptr<RecordBody> &&b) :
+            const Token &tk, bool interface, Visibility vis, std::string_view n, std::unique_ptr<RecordBody> &&b) :
             Statement(tk), is_interface(interface), visibility(vis), name(std::move(n)), body(std::move(b))
         {
         }
@@ -637,7 +637,7 @@ namespace teal::parser::ast {
         virtual serialisation::Object serialise() const override;
     };
     struct EnumBody : ASTNode {
-        std::vector<std::string> elements;
+        std::vector<std::string_view> elements;
 
         EnumBody(const Token &tk) : ASTNode(tk) { }
 
@@ -645,10 +645,10 @@ namespace teal::parser::ast {
     };
     struct EnumDeclarationStatement : Statement {
         Visibility visibility;
-        std::string name;
+        std::string_view name;
         std::unique_ptr<EnumBody> body;
 
-        EnumDeclarationStatement(const Token &tk, Visibility vis, std::string &&n, std::unique_ptr<EnumBody> &&b) :
+        EnumDeclarationStatement(const Token &tk, Visibility vis, std::string_view n, std::unique_ptr<EnumBody> &&b) :
             Statement(tk), visibility(vis), name(std::move(n)), body(std::move(b))
         {
         }
@@ -657,11 +657,11 @@ namespace teal::parser::ast {
     };
     struct TypeAliasStatement : Statement {
         Visibility visibility;
-        std::string name;
+        std::string_view name;
         std::vector<GenericTypeParameter> type_parameters;
         std::unique_ptr<TypeNode> type;
 
-        TypeAliasStatement(const Token &tk, Visibility vis, std::string &&n,
+        TypeAliasStatement(const Token &tk, Visibility vis, std::string_view n,
             std::vector<GenericTypeParameter> &&tparams, std::unique_ptr<TypeNode> &&val) :
             Statement(tk), visibility(vis), name(std::move(n)), type_parameters(std::move(tparams)),
             type(std::move(val))

@@ -38,7 +38,7 @@ std::unique_ptr<Block> Parser::parse_chunk()
 
 std::unique_ptr<Statement> Parser::parse_stat()
 {
-    if (match(TokenType::SEMICOLON)) { return nullptr; }
+    if (match(TokenType::SEMICOLON)) return nullptr;
     TokenType t = peek_token().type;
     Visibility vis;
     switch (t) {
@@ -100,9 +100,9 @@ std::unique_ptr<Statement> Parser::parse_stat()
             push_error(ExpectedToken(TokenType::NAME, peek_token()));
             return nullptr;
         }
-        std::string label_name = peek_token().text;
+        auto label_name = peek_token().text;
         _pos++;
-        return make_node<GotoStatement>(std::move(label_name));
+        return make_node<GotoStatement>(label_name);
     }
     case TokenType::DOUBLE_COLON:
         return parse_label();
@@ -167,7 +167,7 @@ std::unique_ptr<Statement> Parser::parse_label()
         push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
-    std::string name = peek_token().text;
+    auto name = peek_token().text;
     _pos++;
     consume(TokenType::DOUBLE_COLON);
     return make_node<LabelStatement>(std::move(name));
@@ -265,7 +265,7 @@ std::unique_ptr<Statement> Parser::parse_for()
         skip_to_next_statement();
         return nullptr;
     }
-    std::string var_name = peek_token().text;
+    auto var_name = peek_token().text;
     _pos++;
     if (match(TokenType::ASSIGN)) {
         auto for_num = make_node<ForNumericStatement>();
@@ -285,7 +285,7 @@ std::unique_ptr<Statement> Parser::parse_for()
         for_num->body = std::move(body_block);
         return for_num;
     } else {
-        std::vector<std::string> name_list;
+        std::vector<std::string_view> name_list;
         name_list.push_back(var_name);
         while (match(TokenType::COMMA)) {
             if (not check(TokenType::NAME)) {
@@ -329,8 +329,8 @@ std::unique_ptr<Statement> Parser::parse_do()
 std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_macroexp)
 {
     if (not check(TokenType::NAME)) push_error(ExpectedToken(TokenType::NAME, peek_token()));
-    std::vector<std::string> name_path;
-    std::string method_name;
+    std::vector<std::string_view> name_path;
+    std::string_view method_name;
     bool is_method = false;
     if (check(TokenType::NAME)) {
         name_path.push_back(peek_token().text);
@@ -386,7 +386,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
                 if (check(TokenType::R_PAREN)) break;
                 _pos++;
             } else {
-                std::string param_name = peek_token().text;
+                auto param_name = peek_token().text;
                 _pos++;
                 bool opt_flag = false;
                 if (match(TokenType::QUESTION)) opt_flag = true;
@@ -443,7 +443,7 @@ std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_int
         push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
-    std::string name = peek_token().text;
+    auto name = peek_token().text;
     _pos++;
     auto body = parse_record_body();
     return make_node<RecordDeclarationStatement>(is_interface, vis, std::move(name), std::move(body));
@@ -455,7 +455,7 @@ std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis)
         push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
-    std::string name = peek_token().text;
+    auto name = peek_token().text;
     _pos++;
     auto body = parse_enum_body();
     return make_node<EnumDeclarationStatement>(vis, std::move(name), std::move(body));
@@ -467,7 +467,7 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis)
         push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
-    std::string name = peek_token().text;
+    auto name = peek_token().text;
     _pos++;
     std::unique_ptr<TypeNode> type_value;
     std::vector<GenericTypeParameter> type_args;
@@ -513,9 +513,9 @@ std::vector<VariableDeclarationStatement::Name> Parser::parse_att_name_list()
     return list;
 }
 
-std::vector<std::string> Parser::parse_name_list()
+std::vector<std::string_view> Parser::parse_name_list()
 {
-    std::vector<std::string> list;
+    std::vector<std::string_view> list;
     if (not check(TokenType::NAME)) { return list; }
     list.push_back(peek_token().text);
     _pos++;
@@ -574,7 +574,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
                 push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 break;
             }
-            std::string method = peek_token().text;
+            auto method = peek_token().text;
             _pos++;
             std::vector<std::unique_ptr<Expression>> args;
             if (match(TokenType::L_PAREN)) {
@@ -606,7 +606,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
             call->arguments.push_back(std::move(table_arg));
             base = std::move(call);
         } else if (check(TokenType::STRING)) {
-            std::string lit = peek_token().text;
+            auto lit = peek_token().text;
             _pos++;
             auto call = make_node<FunctionCallExpression>(std::move(base), "");
             call->arguments.push_back(make_node<StringExpression>(std::move(lit)));
@@ -615,7 +615,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
             if (not check(TokenType::NAME)) {
                 bool ok = false;
                 const auto mkname = [this](const std::string_view &id) {
-                    return Token { TokenType::NAME, std::string(id), peek_token().line, peek_token().col };
+                    return Token { TokenType::NAME, auto(id), peek_token().line, peek_token().col };
                 };
                 switch (peek_token().type) {
                 case TokenType::TYPE:
@@ -644,7 +644,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
                     break;
                 }
             }
-            std::string field = peek_token().text;
+            auto field = peek_token().text;
             _pos++;
             base = make_node<FieldExpression>(std::move(base), std::move(field));
         } else if (match(TokenType::L_BRACKET)) {
@@ -686,12 +686,12 @@ std::unique_ptr<Expression> Parser::parse_primary_expression()
         return make_node<BooleanExpression>(false);
     }
     if (t == TokenType::NUMBER) {
-        std::string num = peek_token().text;
+        auto num = peek_token().text;
         _pos++;
         return make_node<NumberExpression>(std::move(num));
     }
     if (t == TokenType::STRING) {
-        std::string str = peek_token().text;
+        auto str = peek_token().text;
         _pos++;
         return make_node<StringExpression>(std::move(str));
     }
@@ -863,7 +863,7 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression()
                 if (check(TokenType::R_PAREN)) break;
                 _pos++;
             } else {
-                std::string param_name = peek_token().text;
+                auto param_name = peek_token().text;
                 _pos++;
                 bool opt_flag = false;
                 if (match(TokenType::QUESTION)) opt_flag = true;
@@ -967,7 +967,7 @@ constexpr inline bool is_primitive(const std::string_view &name)
 std::unique_ptr<TypeNode> Parser::parse_base_type()
 {
     if (check(TokenType::NAME) or check(TokenType::NIL)) {
-        std::string name = peek_token().text;
+        auto name = peek_token().text;
         if (is_primitive(name)) {
             _pos++;
             return make_node<BasicTypeNode>(std::move(name));
@@ -1016,7 +1016,7 @@ std::unique_ptr<TypeNode> Parser::parse_base_type()
 
 std::unique_ptr<TypeNode> Parser::parse_nominal_type()
 {
-    std::vector<std::string> name_parts;
+    std::vector<std::string_view> name_parts;
     if (not check(TokenType::NAME)) { return nullptr; }
     name_parts.push_back(peek_token().text);
     _pos++;

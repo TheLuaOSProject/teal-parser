@@ -2,14 +2,15 @@
 #include "Lexer.hpp"
 #include <cassert>
 #include <iostream>
+#include <source_location>
 
 using namespace teal::parser;
 
 const Token Token::NULL_TOKEN = Token { TokenType::END_OF_FILE, "", -1, -1 };
 
-static std::vector<std::string> split(const std::string &i, const std::string_view &d)
+static std::vector<std::string_view> split(std::string_view i, std::string_view d)
 {
-    std::vector<std::string> ts;
+    std::vector<std::string_view> ts;
     int s = 0;
     size_t e = i.find(d);
     while (e != std::string::npos) {
@@ -21,16 +22,236 @@ static std::vector<std::string> split(const std::string &i, const std::string_vi
     return ts;
 }
 
+bool Lexer::skip_comment()
+{
+    if (not(peek() == '-' and peek(1) == '-')) return false;
+    consume();
+    consume();
+    if (peek() == '[') {
+        consume();
+        int eq_count = 0;
+        while (peek() == '=') {
+            consume();
+            eq_count++;
+        }
+        if (peek() == '[') {
+            consume();
+            std::string end_marker = "]";
+            end_marker.append(eq_count, '=');
+            end_marker.push_back(']');
+            size_t end_index = _src.find(end_marker, _pos);
+            if (end_index == std::string::npos) {
+                push_error(UnterminatedLongComment());
+                _pos = _len;
+            } else {
+                for (size_t i = _pos; i < end_index; ++i) {
+                    if (_src[i] == '\r' or _src[i] == '\n') {
+                        if (_src[i] == '\r' and i + 1 < end_index and _src[i + 1] == '\n') i++;
+                        _line++;
+                        _col = 1;
+                    } else {
+                        _col++;
+                    }
+                }
+                _pos = end_index + end_marker.size();
+                _col += end_marker.size();
+            }
+            return true;
+        }
+    }
+    int cur_ln = _line;
+    while (cur_ln == _line) { consume(); }
+    return true;
+}
+
+
+std::expected<Token, Lexer::Error> Lexer::read_string()
+{
+    int start_ln = _line, start_col = _col;
+
+    char delim = consume();
+    size_t start = _pos;
+    if (delim == '[' and (peek() == '[' or peek() == '=')) {
+        int eq_c = 0;
+        while (peek() == '=') {
+            consume();
+            eq_c++;
+        }
+
+        if (peek() != '[') {
+            push_error(InvalidLongStringDelimiter());
+            return Token { TokenType::STRING, std::string_view(), start_ln, start_col };
+        }
+        consume();
+
+        start = _pos;
+        while (true) {
+            if (not peek()) return std::unexpected(Error(Lexer::UnterminatedLongStringLiteral(), start_ln, start_col, std::source_location::current()));
+            if (peek() == ']' and peek(eq_c+1) == ']') {
+                consume();
+                auto done = std::ranges::all_of(
+                    // src | std::views::drop(pos) | std::views::take(eq_c),
+                    _src.substr(_pos, eq_c),
+                    [](char c) { return c == '='; }
+                );
+                if (done) break;
+            }
+            consume();
+        }
+        auto s = _src | std::views::drop(start) | std::views::take(_pos - start);
+        _pos += eq_c + 1;
+        return Token { TokenType::STRING, s, start_ln, start_col };
+    }
+
+    // bool closed = false;
+    // while (_pos < _len) {
+    //     char c = consume();
+    //     if (not c or c == '\n' or c == '\r') break;
+    //     if (c == delim and (peek(-2) != '\\' and peek(-3) != '\\')) {
+    //         closed = true;
+    //         break;
+    //     }
+    // }
+    bool closed = false;
+    while (_pos < _len) {
+        char c = peek();
+
+        if (c == '\0' or c == '\n' or c == '\r')
+            break;
+
+        if (c == delim) {
+            size_t backslash_count = 0;
+            for (int i = _pos - 1; i >= 0 and _src[i] == '\\'; --i)
+                backslash_count++;
+
+            if (backslash_count % 2 == 0) {
+                consume();
+                closed = true;
+                break;
+            }
+        }
+
+        consume();
+    }
+
+    if (not closed) return std::unexpected(make_error(Lexer::UnterminatedStringLiteral()));
+
+    return Token { TokenType::STRING, _src.substr(start, _pos), start_ln, start_col };
+}
+
+Token Lexer::read_number() {
+    int start_line = _line;
+    int start_col = _col;
+    size_t start_pos = _pos; // Record the start position in the source
+    bool is_hex = false;
+    
+    if (peek() == '0') {
+        consume(); // Skip the '0'
+        if (peek() == 'x' || peek() == 'X') {
+            is_hex = true;
+            consume(); // Skip the 'x' or 'X'
+        }
+    }
+    
+    bool seen_decimal = false;
+    while (_pos < _len) {
+        char c = peek();
+        if (is_hex) {
+            if (std::isxdigit(c) || c == '.') {
+                if (c == '.' && seen_decimal)
+                    break;
+                if (c == '.')
+                    seen_decimal = true;
+                consume();
+            } else if (c == 'p' || c == 'P') {
+                consume();
+                if (peek() == '+' || peek() == '-')
+                    consume();
+            } else {
+                break;
+            }
+        } else {
+            if (std::isdigit(c) || c == '.') {
+                if (c == '.' && seen_decimal)
+                    break;
+                if (c == '.')
+                    seen_decimal = true;
+                consume();
+            } else if (c == 'e' || c == 'E') {
+                consume();
+                if (peek() == '+' || peek() == '-')
+                    consume();
+            } else {
+                break;
+            }
+        }
+    }
+    
+    // Create a string_view that refers directly to the source substring
+    // std::string_view num_view{_source.data() + start_pos, _pos - start_pos};
+    
+    return { TokenType::NUMBER, _src.substr(start_pos, _pos - start_pos), start_line, start_col };
+}
+
+Token Lexer::read_name()
+{
+    int start_line = _line;
+    int start_col = _col;
+    // std::string_view name;
+    // name.push_back(consume());
+    // while (std::isalnum(peek()) or peek() == '_') { name.push_back(consume()); }
+    size_t start = _pos;
+    while (std::isalnum(peek()) or peek() == '_')
+        consume();
+    auto nm = _src.substr(start, _pos - start);
+    static const std::unordered_map<std::string_view, TokenType> keywords = {
+        { "nil",       TokenType::NIL       },
+        { "true",      TokenType::TRUE      },
+        { "false",     TokenType::FALSE     },
+        { "function",  TokenType::FUNCTION  },
+        { "end",       TokenType::END       },
+        { "do",        TokenType::DO        },
+        { "if",        TokenType::IF        },
+        { "then",      TokenType::THEN      },
+        { "else",      TokenType::ELSE      },
+        { "elseif",    TokenType::ELSEIF    },
+        { "while",     TokenType::WHILE     },
+        { "repeat",    TokenType::REPEAT    },
+        { "until",     TokenType::UNTIL     },
+        { "for",       TokenType::FOR       },
+        { "in",        TokenType::IN        },
+        { "break",     TokenType::BREAK     },
+        { "goto",      TokenType::GOTO      },
+        { "return",    TokenType::RETURN    },
+        { "local",     TokenType::LOCAL     },
+        { "global",    TokenType::GLOBAL    },
+        { "record",    TokenType::RECORD    },
+        { "interface", TokenType::INTERFACE },
+        { "enum",      TokenType::ENUM      },
+        { "type",      TokenType::TYPE      },
+        { "where",     TokenType::WHERE     },
+        { "and",       TokenType::AND       },
+        { "or",        TokenType::OR        },
+        { "not",       TokenType::NOT       },
+        { "as",        TokenType::AS        },
+        { "is",        TokenType::IS        },
+        { "macroexp",  TokenType::MACROEXP  }
+    };
+    auto it = keywords.find(nm);
+    if (it != keywords.end()) return Token { it->second, nm, start_line, start_col };
+    return Token { TokenType::NAME, nm, start_line, start_col };
+}
+
 std::expected<Token, Lexer::Error> Lexer::lex()
 {
     skip_whitespace();
-    if (pos >= length) return std::unexpected(make_error(Overflow {}));
+    if (_pos >= _len) return std::unexpected(make_error(Overflow {}));
     skip_whitespace();
-    if (pos >= length) return std::unexpected(make_error(Overflow {}));
+    if (_pos >= _len) return std::unexpected(make_error(Overflow {}));
     char c = peek();
-    if (pos >= length) return std::unexpected(make_error(Overflow {}));
-    int tok_line = line;
-    int tok_col = col;
+    if (_pos >= _len) return std::unexpected(make_error(Overflow {}));
+    int tok_line = _line;
+    int tok_col = _col;
     if (c == '\"' or c == '\'' or (c == '[' and (peek(1) == '[' or peek(1) == '='))) return read_string();
 
     if (std::isdigit(c)) return read_number();
@@ -154,23 +375,23 @@ std::expected<Token, Lexer::Error> Lexer::lex()
 
 std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize()
 {
-    auto lines = split(src, "\n");
+    auto lines = split(_src, "\n");
     while (true) {
         if (std::expected<Token, Error> val = lex()) {
-            tokens.push_back(*val);
+            _tokens.push_back(*val);
         } else {
-            if (errors.size() >= max_errors) {
-                errors.push_back(make_error(TooManyErrors { errors.size() }));
+            if (_errors.size() >= max_errors) {
+                _errors.push_back(make_error(TooManyErrors { _errors.size() }));
                 break;
             }
             auto e = val.error();
             if (std::holds_alternative<Overflow>(e.kind)) {
-                tokens.push_back(Token { TokenType::END_OF_FILE, "<EOF>", line, col });
+                _tokens.push_back(Token { TokenType::END_OF_FILE, "<EOF>", _line, _col });
                 break;
-            } else errors.push_back(e);
+            } else _errors.push_back(e);
         }
     }
-    return { tokens, errors };
+    return { _tokens, _errors };
 }
 
 void Lexer::Tests::basic_keyword()
