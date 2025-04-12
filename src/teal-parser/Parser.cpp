@@ -96,7 +96,8 @@ std::unique_ptr<Statement> Parser::parse_stat()
     case TokenType::GOTO: {
         _pos++;
         if (not check(TokenType::NAME)) {
-            $push_error("expected label name after 'goto'");
+            // $push_error("expected label name after 'goto'");
+            push_error(ExpectedToken(TokenType::NAME, peek_token()));
             return nullptr;
         }
         std::string label_name = peek_token().text;
@@ -112,6 +113,7 @@ std::unique_ptr<Statement> Parser::parse_stat()
 
 std::unique_ptr<Statement> Parser::parse_assignment_or_call()
 {
+    const Token &prefix_tk = peek_token();
     auto prefix = parse_prefix_expression();
     if (not prefix) {
         skip_to_next_statement();
@@ -119,7 +121,8 @@ std::unique_ptr<Statement> Parser::parse_assignment_or_call()
     }
     if (check(TokenType::ASSIGN) or check(TokenType::COMMA)) {
         if (dynamic_cast<FunctionCallExpression *>(prefix.get())) {
-            $push_error("cannot assign to function call");
+            // $push_error("cannot assign to function call");
+            push_error(CannotAssignToFunctionCall());
             prefix = make_node<NameExpression>("_error_");
         }
         auto assign = make_node<AssignmentStatement>();
@@ -127,7 +130,8 @@ std::unique_ptr<Statement> Parser::parse_assignment_or_call()
         while (match(TokenType::COMMA)) {
             auto var = parse_var_expression();
             if (not var) {
-                $push_error("expected variable");
+                // $push_error("expected variable");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 if (check(TokenType::COMMA)) {
                     _pos++;
                     continue;
@@ -136,14 +140,16 @@ std::unique_ptr<Statement> Parser::parse_assignment_or_call()
             }
             assign->left.push_back(std::move(var));
         }
-        $consume(TokenType::ASSIGN, "expected '=' in assignment");
+        const Token &tk = peek_token();
+        consume(TokenType::ASSIGN);
         assign->right = parse_expression_list();
-        if (assign->right.empty()) { $push_error("expected expression after '='"); }
+        if (assign->right.empty())
+            push_error(ExpectedExpression(tk));
         return assign;
     } else {
         auto call_expression = dynamic_cast<FunctionCallExpression *>(prefix.get());
         if (not call_expression) {
-            $push_error("unexpected expression statement");
+            push_error(UnexpectedExpression(prefix_tk));
             skip_to_next_statement();
             return nullptr;
         }
@@ -154,24 +160,27 @@ std::unique_ptr<Statement> Parser::parse_assignment_or_call()
 
 std::unique_ptr<Statement> Parser::parse_label()
 {
-    $consume(TokenType::DOUBLE_COLON, "internal error: '::' expected for label");
+    // consume(TokenType::DOUBLE_COLON);
+    consume(TokenType::DOUBLE_COLON);
     if (not check(TokenType::NAME)) {
-        $push_error("expected label name after '::'");
+        // $push_error("expected label name after '::'");
+        push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
     std::string name = peek_token().text;
     _pos++;
-    $consume(TokenType::DOUBLE_COLON, "expected '::' after label name");
+    consume(TokenType::DOUBLE_COLON);
     return make_node<LabelStatement>(std::move(name));
 }
 
 std::unique_ptr<Statement> Parser::parse_if()
 {
-    $consume(TokenType::IF, "internal error: 'if' expected");
+    const Token &iftk = peek_token();
+    consume(TokenType::IF);
     auto if_stmt = make_node<IfStatement>();
     auto cond = parse_expression();
-    if (not cond) { $push_error("expected condition after 'if'"); }
-    $consume(TokenType::THEN, "expected 'then' after condition");
+    if (not cond) { push_error(ExpectedExpression(iftk)); }
+    consume(TokenType::THEN);
     auto then_block = make_node<Block>();
     while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF) and not is_at_end()
     ) {
@@ -183,9 +192,10 @@ std::unique_ptr<Statement> Parser::parse_if()
     }
     if_stmt->if_branches.push_back({ std::move(cond), std::move(then_block) });
     while (match(TokenType::ELSEIF)) {
+        const Token &elseif_tk = peek_token();
         auto elseif_cond = parse_expression();
-        if (not elseif_cond) { $push_error("expected condition after 'elseif'"); }
-        $consume(TokenType::THEN, "expected 'then' after condition");
+        if (not elseif_cond) push_error(ExpectedExpression(elseif_tk));
+        consume(TokenType::THEN);
         auto elseif_block = make_node<Block>();
         while (not check(TokenType::END) and not check(TokenType::ELSE) and not check(TokenType::ELSEIF)
                and not is_at_end()) {
@@ -206,31 +216,32 @@ std::unique_ptr<Statement> Parser::parse_if()
         }
         if_stmt->else_block = std::move(else_block);
     }
-    $consume(TokenType::END, "expected 'end' to close 'if'");
+    consume(TokenType::END);
     return if_stmt;
 }
 
 std::unique_ptr<Statement> Parser::parse_while()
 {
-    $consume(TokenType::WHILE, "internal error: 'while' expected");
+    consume(TokenType::WHILE);
     auto while_stmt = make_node<WhileStatement>();
+    const Token &while_tk = peek_token();
     while_stmt->condition = parse_expression();
-    if (not while_stmt->condition) { $push_error("expected condition after 'while'"); }
-    $consume(TokenType::DO, "expected 'do' after condition");
+    if (not while_stmt->condition) push_error(ExpectedExpression(while_tk));
+    consume(TokenType::DO);
     auto body_block = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) body_block->statements.push_back(std::move(st));
         if (check(TokenType::END) or check(TokenType::UNTIL) or check(TokenType::END_OF_FILE)) break;
     }
-    $consume(TokenType::END, "expected 'end' to close 'while'");
+    consume(TokenType::END);
     while_stmt->body = std::move(body_block);
     return while_stmt;
 }
 
 std::unique_ptr<Statement> Parser::parse_repeat()
 {
-    $consume(TokenType::REPEAT, "internal error: 'repeat' expected");
+    consume(TokenType::REPEAT);
     auto repeat_stmt = make_node<RepeatStatement>();
     auto body_block = make_node<Block>();
     while (not check(TokenType::UNTIL) and not is_at_end()) {
@@ -238,18 +249,19 @@ std::unique_ptr<Statement> Parser::parse_repeat()
         if (st) body_block->statements.push_back(std::move(st));
         if (check(TokenType::UNTIL) or check(TokenType::END_OF_FILE)) break;
     }
-    $consume(TokenType::UNTIL, "expected 'until' after 'repeat' block");
+    consume(TokenType::UNTIL);
     repeat_stmt->body = std::move(body_block);
+    const Token &until_tk = peek_token();
     repeat_stmt->condition = parse_expression();
-    if (not repeat_stmt->condition) { $push_error("expected condition after 'until'"); }
+    if (not repeat_stmt->condition) push_error(ExpectedExpression(until_tk));
     return repeat_stmt;
 }
 
 std::unique_ptr<Statement> Parser::parse_for()
 {
-    $consume(TokenType::FOR, "internal error: 'for' expected");
+    consume(TokenType::FOR);
     if (not check(TokenType::NAME)) {
-        $push_error("expected identifier after 'for'");
+        push_error(ExpectedToken(TokenType::NAME, peek_token()));
         skip_to_next_statement();
         return nullptr;
     }
@@ -259,17 +271,17 @@ std::unique_ptr<Statement> Parser::parse_for()
         auto for_num = make_node<ForNumericStatement>();
         for_num->variable_name = var_name;
         for_num->expressions.start = parse_expression();
-        $consume(TokenType::COMMA, "expected ',' after start value");
+        consume(TokenType::COMMA);
         for_num->expressions.end = parse_expression();
         if (match(TokenType::COMMA)) { for_num->expressions.step = parse_expression(); }
-        $consume(TokenType::DO, "expected 'do' in numeric for");
+        consume(TokenType::DO);
         auto body_block = make_node<Block>();
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) body_block->statements.push_back(std::move(st));
             if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
         }
-        $consume(TokenType::END, "expected 'end' to close 'for'");
+        consume(TokenType::END);
         for_num->body = std::move(body_block);
         return for_num;
     } else {
@@ -277,22 +289,22 @@ std::unique_ptr<Statement> Parser::parse_for()
         name_list.push_back(var_name);
         while (match(TokenType::COMMA)) {
             if (not check(TokenType::NAME)) {
-                $push_error("expected name in for-in loop");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 break;
             }
             name_list.push_back(peek_token().text);
             _pos++;
         }
-        $consume(TokenType::IN, "expected 'in' in for loop");
+        consume(TokenType::IN);
         auto exprs = parse_expression_list();
-        $consume(TokenType::DO, "expected 'do' in for loop");
+        consume(TokenType::DO);
         auto body_block = make_node<Block>();
         while (not check(TokenType::END) and not is_at_end()) {
             auto st = parse_stat();
             if (st) body_block->statements.push_back(std::move(st));
             if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
         }
-        $consume(TokenType::END, "expected 'end' to close 'for'");
+        consume(TokenType::END);
         auto for_in = make_node<ForInStatement>();
         for_in->names = std::move(name_list);
         for_in->exprs = std::move(exprs);
@@ -303,20 +315,20 @@ std::unique_ptr<Statement> Parser::parse_for()
 
 std::unique_ptr<Statement> Parser::parse_do()
 {
-    $consume(TokenType::DO, "internal error: 'do' expected");
+    consume(TokenType::DO);
     auto block_node = make_node<Block>();
     while (not check(TokenType::END) and not is_at_end()) {
         auto st = parse_stat();
         if (st) block_node->statements.push_back(std::move(st));
         if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
     }
-    $consume(TokenType::END, "expected 'end' to close 'do' block");
+    consume(TokenType::END);
     return make_node<DoStatement>(std::move(block_node));
 }
 
 std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_macroexp)
 {
-    if (not check(TokenType::NAME)) { $push_error("expected function name after 'function'"); }
+    if (not check(TokenType::NAME)) push_error(ExpectedToken(TokenType::NAME, peek_token()));
     std::vector<std::string> name_path;
     std::string method_name;
     bool is_method = false;
@@ -328,7 +340,8 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
         while (true) {
             if (match(TokenType::DOT)) {
                 if (not check(TokenType::NAME)) {
-                    $push_error("expected name after '.' in function name");
+                    // $push_error("expected name after '.' in function name");
+                    push_error(ExpectedToken(TokenType::NAME, peek_token()));
                     break;
                 }
                 name_path.push_back(peek_token().text);
@@ -336,7 +349,8 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
             } else if (match(TokenType::COLON)) {
                 is_method = true;
                 if (not check(TokenType::NAME)) {
-                    $push_error("expected name after ':' in function name");
+                    // $push_error("expected name after ':' in function name");
+                    push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 } else {
                     method_name = peek_token().text;
                     _pos++;
@@ -348,14 +362,15 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
         }
     } else {
         if (check(TokenType::DOT) or check(TokenType::COLON)) {
-            $push_error("macroexps are not allowed to be members");
+            // $push_error("macroexps are not allowed to be members");
+            push_error(MacroexpMember());
             while (match(TokenType::DOT) or match(TokenType::COLON));
             // return nullptr;
         }
     }
     auto func_body = make_node<FunctionBody>();
     if (match(TokenType::LESS)) { parse_generic_list(&func_body->type_parameters); }
-    $consume(TokenType::L_PAREN, "expected '(' after function name");
+    consume(TokenType::L_PAREN);
     if (not check(TokenType::R_PAREN)) {
         while (true) {
             if (check(TokenType::VAR_ARG)) {
@@ -366,7 +381,8 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
                 break;
             }
             if (not check(TokenType::NAME)) {
-                $push_error("expected parameter name or '...'");
+                // $push_error("expected parameter name or '...'");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 if (check(TokenType::R_PAREN)) break;
                 _pos++;
             } else {
@@ -381,7 +397,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
             if (not match(TokenType::COMMA)) break;
         }
     }
-    $consume(TokenType::R_PAREN, "expected ')' after parameters");
+    consume(TokenType::R_PAREN);
     if (match(TokenType::COLON)) {
         bool ret_var_arg = false;
         func_body->return_types = parse_return_type_list(&ret_var_arg);
@@ -393,7 +409,7 @@ std::unique_ptr<Statement> Parser::parse_function_decl(Visibility vis, bool is_m
         if (st) body_block->statements.push_back(std::move(st));
         if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
     }
-    $consume(TokenType::END, "expected 'end' to close function");
+    consume(TokenType::END);
     func_body->body = std::move(body_block);
     auto func_decl = make_node<FunctionDeclarationStatement>(vis);
     func_decl->name_path = std::move(name_path);
@@ -408,13 +424,14 @@ std::unique_ptr<Statement> Parser::parse_var_decl(Visibility vis)
 {
     auto var_stmt = make_node<VariableDeclarationStatement>(vis);
     auto names = parse_att_name_list();
-    if (names.empty()) { $push_error("expected variable name"); }
+    if (names.empty()) push_error(ExpectedToken(TokenType::NAME, peek_token()));
     var_stmt->names = std::move(names);
-    if (match(TokenType::COLON)) { var_stmt->types = parse_type_list(); }
-    if (match(TokenType::ASSIGN)) { var_stmt->values = parse_expression_list(); }
+    if (match(TokenType::COLON)) var_stmt->types = parse_type_list();
+    if (match(TokenType::ASSIGN)) var_stmt->values = parse_expression_list();
     if (vis == Visibility::NONE) {
         if (var_stmt->types.empty() and var_stmt->values.empty()) {
-            $push_error("global variable must have type or initial value");
+            // $push_error("global variable must have type or initial value");
+            push_error(GlobalVariableMustBeTyped(var_stmt->names[0].name));
         }
     }
     return var_stmt;
@@ -423,9 +440,7 @@ std::unique_ptr<Statement> Parser::parse_var_decl(Visibility vis)
 std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_interface)
 {
     if (not check(TokenType::NAME)) {
-        $push_error(
-            std::format("expected name after `{}` got {}", is_interface ? "interface" : "record", peek_token())
-        );
+        push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
     std::string name = peek_token().text;
@@ -437,7 +452,7 @@ std::unique_ptr<Statement> Parser::parse_record_decl(Visibility vis, bool is_int
 std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis)
 {
     if (not check(TokenType::NAME)) {
-        $push_error("expected name after 'enum'");
+        push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
     std::string name = peek_token().text;
@@ -449,7 +464,7 @@ std::unique_ptr<Statement> Parser::parse_enum_decl(Visibility vis)
 std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis)
 {
     if (not check(TokenType::NAME)) {
-        $push_error("expected name after 'type'");
+        push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return nullptr;
     }
     std::string name = peek_token().text;
@@ -469,7 +484,8 @@ std::unique_ptr<Statement> Parser::parse_type_alias_decl(Visibility vis)
             type_value = parse_type();
         }
     } else {
-        if (vis == Visibility::LOCAL) { $push_error("expected '=' in local type alias"); }
+        if (vis == Visibility::LOCAL)
+            push_error(ExpectedToken(TokenType::ASSIGN, peek_token()));
     }
     return make_node<TypeAliasStatement>(vis, std::move(name), std::move(type_args), std::move(type_value));
 }
@@ -484,12 +500,13 @@ std::vector<VariableDeclarationStatement::Name> Parser::parse_att_name_list()
         _pos++;
         if (match(TokenType::LESS)) {
             if (not check(TokenType::NAME)) {
-                $push_error("expected attribute name in '< >'");
+                // $push_error("expected attribute name in '< >'")
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
             } else {
                 na.attribute = peek_token().text;
                 _pos++;
             }
-            $consume(TokenType::GREATER, "expected '>' after attribute");
+            consume(TokenType::GREATER);
         }
         list.push_back(std::move(na));
     } while (match(TokenType::COMMA));
@@ -504,7 +521,8 @@ std::vector<std::string> Parser::parse_name_list()
     _pos++;
     while (match(TokenType::COMMA)) {
         if (not check(TokenType::NAME)) {
-            $push_error("expected name after ','");
+            // $push_error("expected name after ','");
+            push_error(ExpectedToken(TokenType::NAME, peek_token()));
             break;
         }
         list.push_back(peek_token().text);
@@ -525,7 +543,8 @@ std::vector<std::unique_ptr<Expression>> Parser::parse_expression_list()
         if (e) {
             exprs.push_back(std::move(e));
         } else {
-            $push_error("expected expression after ','");
+            // $push_error("expected expression after ','");
+            push_error(ExpectedExpression(peek_token()));
             if (not check(TokenType::COMMA)) break;
         }
     }
@@ -537,20 +556,22 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
     std::unique_ptr<Expression> base;
     if (match(TokenType::L_PAREN)) {
         base = parse_expression();
-        $consume(TokenType::R_PAREN, "expected ')'");
+        consume(TokenType::R_PAREN);
     } else if (check(TokenType::NAME)) {
         auto s = peek_token().text;
         base = make_node<NameExpression>(std::move(s)
         ); // specialisation of std::move for string makes it const qualified. Why? because fuck you
         _pos++;
     } else {
-        $push_error(std::format("expected '(' or Name, got {}", peek_token()));
+        // $push_error(std::format("expected '(' or Name, got {}", peek_token()));
+        push_error(ExpectedToken(TokenType::L_PAREN, peek_token()));
         return nullptr;
     }
     while (true) {
         if (match(TokenType::COLON)) {
             if (not check(TokenType::NAME)) {
-                $push_error("expected method name after ':'");
+                // $push_error("expected method name after ':'");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 break;
             }
             std::string method = peek_token().text;
@@ -558,7 +579,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
             std::vector<std::unique_ptr<Expression>> args;
             if (match(TokenType::L_PAREN)) {
                 if (not check(TokenType::R_PAREN)) { args = parse_expression_list(); }
-                $consume(TokenType::R_PAREN, "expected ')' after arguments");
+                consume(TokenType::R_PAREN);
             } else if (check(TokenType::L_BRACE)) {
                 args.push_back(parse_table_constructor());
             } else if (check(TokenType::STRING)) {
@@ -566,7 +587,8 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
                 args.push_back(make_node<StringExpression>(std::move(x)));
                 _pos++;
             } else {
-                $push_error("expected arguments after method call");
+                push_error(ExpectedArguments());
+                // $push_error("expected arguments after method call");
             }
             auto call = make_node<FunctionCallExpression>(std::move(base), std::move(method));
             for (auto &arg : args) call->arguments.push_back(std::move(arg));
@@ -574,7 +596,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
         } else if (match(TokenType::L_PAREN)) {
             std::vector<std::unique_ptr<Expression>> args;
             if (not check(TokenType::R_PAREN)) { args = parse_expression_list(); }
-            $consume(TokenType::R_PAREN, "expected ')'");
+            consume(TokenType::R_PAREN);
             auto call = make_node<FunctionCallExpression>(std::move(base), "");
             for (auto &arg : args) call->arguments.push_back(std::move(arg));
             base = std::move(call);
@@ -617,7 +639,8 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
                     break;
                 }
                 if (not ok) {
-                    $push_error(std::format("expected field name after '.', got `{}`", peek_token().type));
+                    // $push_error(std::format("expected field name after '.', got `{}`", peek_token().type));
+                    push_error(ExpectedToken(TokenType::NAME, peek_token()));
                     break;
                 }
             }
@@ -626,7 +649,7 @@ std::unique_ptr<Expression> Parser::parse_prefix_expression()
             base = make_node<FieldExpression>(std::move(base), std::move(field));
         } else if (match(TokenType::L_BRACKET)) {
             auto index_expression = parse_expression();
-            $consume(TokenType::R_BRACKET, "expected ']'");
+            consume(TokenType::R_BRACKET);
             base = make_node<IndexExpression>(std::move(base), std::move(index_expression));
         } else {
             break;
@@ -640,7 +663,8 @@ std::unique_ptr<Expression> Parser::parse_var_expression()
     auto expr = parse_prefix_expression();
     if (not expr) return nullptr;
     if (dynamic_cast<FunctionCallExpression *>(expr.get())) {
-        $push_error("unexpected function call in assignment");
+        // $push_error("unexpected function call in assignment");
+        push_error(UnexpectedFunctionCall());
         return make_node<NameExpression>("_error_");
     }
     return expr;
@@ -680,7 +704,8 @@ std::unique_ptr<Expression> Parser::parse_primary_expression()
     if (t == TokenType::NAME or t == TokenType::L_PAREN or Token::type_is_teal_keyword(t)) {
         return parse_prefix_expression();
     }
-    $push_error(std::format("unexpected token `{}` (type: {}) in expression", peek_token().text, peek_token().type));
+    // $push_error(std::format("unexpected token `{}` (type: {}) in expression", peek_token().text, peek_token().type));
+    push_error(UnexpectedToken(peek_token()));
     return nullptr;
 }
 
@@ -699,7 +724,7 @@ std::unique_ptr<Expression> Parser::parse_exp_rec(int min_prec)
                     cast_types = parse_type_list();
                     if (match(TokenType::VAR_ARG)) { }
                 }
-                $consume(TokenType::R_PAREN, "expected ')'");
+                consume(TokenType::R_PAREN);
             } else {
                 auto type_node = parse_type();
                 if (type_node) cast_types.push_back(std::move(type_node));
@@ -781,7 +806,8 @@ std::unique_ptr<Expression> Parser::parse_unary_expression()
 bool Parser::parse_generic_list(std::vector<GenericTypeParameter> *t_params)
 {
     if (not check(TokenType::NAME)) {
-        $push_error("expected type parameter name");
+        // $push_error("expected type parameter name");
+        push_error(ExpectedToken(TokenType::NAME, peek_token()));
         return false;
     }
     while (check(TokenType::NAME)) {
@@ -791,7 +817,7 @@ bool Parser::parse_generic_list(std::vector<GenericTypeParameter> *t_params)
         t_params->push_back(param);
         if (not match(TokenType::COMMA)) break;
     }
-    return (bool)$consume(TokenType::GREATER, "expected '>' after type parameters");
+    return (bool)consume(TokenType::GREATER);
 }
 
 bool Parser::parse_typeargs(std::vector<std::unique_ptr<TypeNode>> *types)
@@ -812,16 +838,16 @@ bool Parser::parse_typeargs(std::vector<std::unique_ptr<TypeNode>> *types)
         if (not match(TokenType::COMMA)) break;
     }
 
-    $consume(TokenType::GREATER, "expected '>' after type arguments");
+    consume(TokenType::GREATER);
     return true;
 }
 
 std::unique_ptr<Expression> Parser::parse_function_def_expression()
 {
-    $consume(TokenType::FUNCTION, "internal error: 'function' expected");
+    consume(TokenType::FUNCTION);
     auto func_body = make_node<FunctionBody>();
     if (match(TokenType::LESS)) { parse_generic_list(&func_body->type_parameters); }
-    $consume(TokenType::L_PAREN, "expected '(' in function literal");
+    consume(TokenType::L_PAREN);
     if (not check(TokenType::R_PAREN)) {
         while (true) {
             if (check(TokenType::VAR_ARG)) {
@@ -832,7 +858,8 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression()
                 break;
             }
             if (not check(TokenType::NAME)) {
-                $push_error("expected parameter name or '...'");
+                // $push_error("expected parameter name or '...'");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 if (check(TokenType::R_PAREN)) break;
                 _pos++;
             } else {
@@ -847,7 +874,7 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression()
             if (not match(TokenType::COMMA)) break;
         }
     }
-    $consume(TokenType::R_PAREN, "expected ')' in function literal");
+    consume(TokenType::R_PAREN);
     if (match(TokenType::COLON)) {
         bool ret_var_arg = false;
         func_body->return_types = parse_return_type_list(&ret_var_arg);
@@ -859,14 +886,14 @@ std::unique_ptr<Expression> Parser::parse_function_def_expression()
         if (st) body_block->statements.push_back(std::move(st));
         if (check(TokenType::END) or check(TokenType::END_OF_FILE)) break;
     }
-    $consume(TokenType::END, "expected 'end' to close function");
+    consume(TokenType::END);
     func_body->body = std::move(body_block);
     return make_node<FunctionDefinitionExpression>(std::move(func_body));
 }
 
 std::unique_ptr<Expression> Parser::parse_table_constructor()
 {
-    $consume(TokenType::L_BRACE, "internal error: '{' expected");
+    consume(TokenType::L_BRACE);
     auto table = make_node<TableConstructorExpression>();
     if (not check(TokenType::R_BRACE)) {
         while (true) {
@@ -874,8 +901,8 @@ std::unique_ptr<Expression> Parser::parse_table_constructor()
             //[...]
             if (match(TokenType::L_BRACKET)) {
                 auto key_expr = parse_expression();
-                $consume(TokenType::R_BRACKET, "expected ']'");
-                $consume(TokenType::ASSIGN, "expected '=' after key");
+                consume(TokenType::R_BRACKET);
+                consume(TokenType::ASSIGN);
                 field = TableConstructorExpression::KeyValuePair(std::move(key_expr), parse_expression());
             } else if (check(TokenType::NAME) and (
                     (peek_token(1).type == TokenType::COLON and peek_token(3).type != TokenType::L_PAREN)
@@ -889,7 +916,7 @@ std::unique_ptr<Expression> Parser::parse_table_constructor()
                     and (peek_token(1).type == TokenType::COLON or peek_token(1).type == TokenType::ASSIGN)) {
                     _pos++;
                     if (match(TokenType::COLON)) { kvp.type = parse_type(); }
-                    $consume(TokenType::ASSIGN, "expected '=' after field name");
+                    consume(TokenType::ASSIGN);
                 }
                 kvp.value = parse_expression();
                 field = std::move(kvp);
@@ -905,7 +932,7 @@ std::unique_ptr<Expression> Parser::parse_table_constructor()
             } else break;
         }
     }
-    $consume(TokenType::R_BRACE, "expected '}'");
+    consume(TokenType::R_BRACE);
     return table;
 }
 
@@ -914,7 +941,7 @@ std::unique_ptr<TypeNode> Parser::parse_type()
     std::unique_ptr<TypeNode> first_type;
     if (match(TokenType::L_PAREN)) {
         first_type = parse_type();
-        $consume(TokenType::R_PAREN, "expected ')'");
+        consume(TokenType::R_PAREN);
     } else {
         first_type = parse_base_type();
     }
@@ -953,7 +980,7 @@ std::unique_ptr<TypeNode> Parser::parse_base_type()
         if (match(TokenType::COLON)) {
             auto second_type = parse_type();
             if (not second_type) second_type = make_node<BasicTypeNode>("nil");
-            $consume(TokenType::R_BRACE, "expected '}'");
+            consume(TokenType::R_BRACE);
             auto map_node = make_node<TableTypeNode>();
             map_node->is_map = true;
             map_node->key_type = std::move(first_type);
@@ -967,7 +994,7 @@ std::unique_ptr<TypeNode> Parser::parse_base_type()
                 if (not t) t = make_node<BasicTypeNode>("nil");
                 types.push_back(std::move(t));
             }
-            $consume(TokenType::R_BRACE, "expected '}'");
+            consume(TokenType::R_BRACE);
             if (types.size() == 1) {
                 auto arr_node = make_node<TableTypeNode>();
                 arr_node->is_map = false;
@@ -982,7 +1009,8 @@ std::unique_ptr<TypeNode> Parser::parse_base_type()
         }
     }
     if (check(TokenType::FUNCTION)) { return parse_function_type(); }
-    $push_error(std::format("expected type, got {}", peek_token()));
+    // $push_error(std::format("expected type, got {}", peek_token()));
+    push_error(ExpectedToken(TokenType::NAME, peek_token()));
     return nullptr;
 }
 
@@ -994,7 +1022,8 @@ std::unique_ptr<TypeNode> Parser::parse_nominal_type()
     _pos++;
     while (match(TokenType::DOT)) {
         if (not check(TokenType::NAME)) {
-            $push_error("expected name after '.' in type name");
+            // $push_error("expected name after '.' in type name");
+            push_error(ExpectedToken(TokenType::NAME, peek_token()));
             break;
         }
         name_parts.push_back(peek_token().text);
@@ -1009,10 +1038,10 @@ std::unique_ptr<TypeNode> Parser::parse_nominal_type()
 
 std::unique_ptr<TypeNode> Parser::parse_function_type()
 {
-    $consume(TokenType::FUNCTION, "internal error: 'function' expected");
+    consume(TokenType::FUNCTION);
     auto node = make_node<FunctionTypeNode>();
     if (match(TokenType::LESS)) { parse_generic_list(&node->type_parameters); }
-    $consume(TokenType::L_PAREN, "expected '(' in function type");
+    consume(TokenType::L_PAREN);
     if (not check(TokenType::R_PAREN)) {
         while (true) {
             FunctionTypeNode::ParameterType param;
@@ -1022,7 +1051,7 @@ std::unique_ptr<TypeNode> Parser::parse_function_type()
                     _pos++;
                     param.is_optional = false;
                     if (match(TokenType::QUESTION)) param.is_optional = true;
-                    $consume(TokenType::COLON, "expected ':' after parameter name");
+                    consume(TokenType::COLON);
                 } else {
                     param.name.reset();
                     param.is_optional = false;
@@ -1041,7 +1070,7 @@ std::unique_ptr<TypeNode> Parser::parse_function_type()
             if (not match(TokenType::COMMA)) break;
         }
     }
-    $consume(TokenType::R_PAREN, "expected ')'");
+    consume(TokenType::R_PAREN);
     if (match(TokenType::COLON)) {
         bool var_arg = false;
         node->return_types = parse_return_type_list(&var_arg);
@@ -1075,7 +1104,7 @@ std::vector<std::unique_ptr<TypeNode>> Parser::parse_return_type_list(bool *var_
             types = parse_type_list();
             if (match(TokenType::VAR_ARG)) *var_arg = true;
         }
-        $consume(TokenType::R_PAREN, "expected ')'");
+        consume(TokenType::R_PAREN);
     } else {
         types = parse_type_list();
         if (match(TokenType::VAR_ARG)) *var_arg = true;
@@ -1096,12 +1125,14 @@ std::unique_ptr<RecordBody> Parser::parse_record_body()
         //     _pos++;
         //     if (not match(TokenType::COMMA)) break;
         // }
-        // $consume(TokenType::GREATER, "expected '>' after type parameters");
+        // consume(TokenType::GREATER);
     }
     if (match(TokenType::IS)) { parse_interface_list(rb.get()); }
     if (match(TokenType::WHERE)) {
+        const Token &tk = peek_token();
         rb->where_clause = parse_expression();
-        if (not rb->where_clause) { $push_error("expected expression after 'where'"); }
+        // if (not rb->where_clause) { $push_error("expected expression after 'where'"); }
+        if (not rb->where_clause) push_error(ExpectedExpression(tk));
     }
     while (not check(TokenType::END) and not is_at_end()) {
         RecordBody::Entry entry;
@@ -1112,14 +1143,15 @@ std::unique_ptr<RecordBody> Parser::parse_record_body()
             continue;
         }
         if (check(TokenType::TYPE) and peek_token(1).type != TokenType::COLON) {
-            $consume(TokenType::TYPE, "internal error");
+            consume(TokenType::TYPE);
             if (not check(TokenType::NAME)) {
-                $push_error("expected name after 'type'");
+                // $push_error("expected name after 'type'");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
             } else {
                 entry.type_name = peek_token().text;
                 _pos++;
             }
-            $consume(TokenType::ASSIGN, "expected '=' after type name");
+            consume(TokenType::ASSIGN);
             entry.type_value = parse_type();
             entry.entry_kind = RecordBody::Entry::Kind::TYPE_ALIAS;
             rb->entries.push_back(std::move(entry));
@@ -1127,7 +1159,8 @@ std::unique_ptr<RecordBody> Parser::parse_record_body()
         }
         if (match(TokenType::RECORD)) {
             if (not check(TokenType::NAME)) {
-                $push_error(std::format("expected name after 'record', got {}", peek_token()));
+                // $push_error(std::format("expected name after 'record', got {}", peek_token()));
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
             } else {
                 entry.nested_name = peek_token().text;
                 _pos++;
@@ -1139,7 +1172,8 @@ std::unique_ptr<RecordBody> Parser::parse_record_body()
         }
         if (match(TokenType::ENUM)) {
             if (not check(TokenType::NAME)) {
-                $push_error("expected name after 'enum'");
+                // $push_error("expected name after 'enum'");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
             } else {
                 entry.nested_name = peek_token().text;
                 _pos++;
@@ -1151,7 +1185,8 @@ std::unique_ptr<RecordBody> Parser::parse_record_body()
         }
         if (match(TokenType::INTERFACE)) {
             if (not check(TokenType::NAME)) {
-                $push_error(std::format("expected name after 'interface', got {}", peek_token()));
+                // $push_error(std::format("expected name after 'interface', got {}", peek_token()));
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
             } else {
                 entry.nested_name = peek_token().text;
                 _pos++;
@@ -1171,25 +1206,27 @@ std::unique_ptr<RecordBody> Parser::parse_record_body()
             _pos++;
         } else if (match(TokenType::L_BRACKET)) {
             if (not check(TokenType::STRING)) {
-                $push_error("expected literal string key in record field");
+                // $push_error("expected literal string key in record field");
+                push_error(ExpectedToken(TokenType::STRING, peek_token()));
             } else {
                 entry.key_literal = peek_token().text;
                 _pos++;
             }
-            $consume(TokenType::R_BRACKET, "expected ']'");
+            consume(TokenType::R_BRACKET);
         } else {
             if (check(TokenType::END) or is_at_end()) break;
-            $push_error(std::format("unexpected token `{}` in record body", peek_token()));
+            // $push_error(std::format("unexpected token `{}` in record body", peek_token()));
+            push_error(UnexpectedToken(peek_token()));
             _pos++;
             continue;
         }
-        $consume(TokenType::COLON, std::format("expected ':' after record key"));
+        consume(TokenType::COLON);
         entry.type = parse_type();
         entry.is_metamethod = is_meta;
         entry.entry_kind = RecordBody::Entry::Kind::FIELD;
         rb->entries.push_back(std::move(entry));
     }
-    $consume(TokenType::END, "expected 'end' to close record");
+    consume(TokenType::END);
     return rb;
 }
 
@@ -1204,11 +1241,12 @@ std::unique_ptr<EnumBody> Parser::parse_enum_body()
         } else if (check(TokenType::END)) {
             break;
         } else {
-            $push_error("expected string in enum");
+            // $push_error("expected string in enum");
+            push_error(ExpectedToken(TokenType::STRING, peek_token()));
             _pos++;
         }
     }
-    $consume(TokenType::END, "expected 'end' to close enum");
+    consume(TokenType::END);
     return body;
 }
 
@@ -1216,13 +1254,14 @@ void Parser::parse_interface_list(RecordBody *rb)
 {
     if (match(TokenType::L_BRACE)) {
         rb->structural_ext = parse_type();
-        $consume(TokenType::R_BRACE, "expected '}' in interface list");
+        consume(TokenType::R_BRACE);
         if (match(TokenType::COMMA)) {
             do {
                 auto nom = parse_nominal_type();
                 if (nom) rb->interface_ext.push_back(std::move(nom));
                 else {
-                    $push_error("expected interface name");
+                    // $push_error("expected interface name");
+                    push_error(ExpectedToken(TokenType::NAME, peek_token()));
                     break;
                 }
             } while (match(TokenType::COMMA));
@@ -1230,12 +1269,12 @@ void Parser::parse_interface_list(RecordBody *rb)
     } else {
         auto nom = parse_nominal_type();
         if (nom) rb->interface_ext.push_back(std::move(nom));
-        else $push_error("expected interface name");
+        else push_error(ExpectedToken(TokenType::NAME, peek_token()));
         while (match(TokenType::COMMA)) {
             auto nom2 = parse_nominal_type();
             if (nom2) rb->interface_ext.push_back(std::move(nom2));
             else {
-                $push_error("expected interface name");
+                push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 break;
             }
         }
