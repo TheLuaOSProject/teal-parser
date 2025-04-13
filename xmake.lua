@@ -12,6 +12,7 @@ target("teal-parser")
     add_cxxflags(
         "-Wall", "-Wextra", "-Werror",
         "-Wno-c23-extensions",
+        "-Wno-c99-designator",
         "-stdlib=libc++",
         "-fexperimental-library"
     )

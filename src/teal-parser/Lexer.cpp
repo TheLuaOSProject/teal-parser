@@ -3,7 +3,10 @@
 #include <cassert>
 #include <iostream>
 #include <source_location>
+#include <algorithm>
+#include <array>
 
+using namespace std::string_view_literals;
 using namespace teal::parser;
 
 const Token Token::NULL_TOKEN = Token { TokenType::END_OF_FILE, "", -1, -1 };
@@ -86,8 +89,9 @@ std::expected<Token, Lexer::Error> Lexer::read_string()
 
         start = _pos;
         while (true) {
-            if (not peek()) return std::unexpected(Error(Lexer::UnterminatedLongStringLiteral(), start_ln, start_col, std::source_location::current()));
-            if (peek() == ']' and peek(eq_c+1) == ']') {
+            char c = peek();
+            if (not c) return std::unexpected(Error(Lexer::UnterminatedLongStringLiteral(), start_ln, start_col $on_debug(, std::source_location::current())));
+            if (c == ']' and peek(eq_c+1) == ']') {
                 consume();
                 auto done = std::ranges::all_of(
                     // src | std::views::drop(pos) | std::views::take(eq_c),
@@ -96,6 +100,7 @@ std::expected<Token, Lexer::Error> Lexer::read_string()
                 );
                 if (done) break;
             }
+            
             consume();
         }
         auto s = _src | std::views::drop(start) | std::views::take(_pos - start);
@@ -147,39 +152,38 @@ Token Lexer::read_number() {
     
     if (peek() == '0') {
         consume(); // Skip the '0'
-        if (peek() == 'x' || peek() == 'X') {
+        if (peek() == 'x' or peek() == 'X') {
             is_hex = true;
             consume(); // Skip the 'x' or 'X'
         }
     }
     
     bool seen_decimal = false;
-    while (_pos < _len) {
-        char c = peek();
+    while (char c = peek()) {
         if (is_hex) {
-            if (std::isxdigit(c) || c == '.') {
-                if (c == '.' && seen_decimal)
+            if (std::isxdigit(c) or c == '.') {
+                if (c == '.' and seen_decimal)
                     break;
                 if (c == '.')
                     seen_decimal = true;
                 consume();
-            } else if (c == 'p' || c == 'P') {
+            } else if (c == 'p' or c == 'P') {
                 consume();
-                if (peek() == '+' || peek() == '-')
+                if (peek() == '+' or peek() == '-')
                     consume();
             } else {
                 break;
             }
         } else {
-            if (std::isdigit(c) || c == '.') {
-                if (c == '.' && seen_decimal)
+            if (std::isdigit(c) or c == '.') {
+                if (c == '.' and seen_decimal)
                     break;
                 if (c == '.')
                     seen_decimal = true;
                 consume();
-            } else if (c == 'e' || c == 'E') {
+            } else if (c == 'e' or c == 'E') {
                 consume();
-                if (peek() == '+' || peek() == '-')
+                if (peek() == '+' or peek() == '-')
                     consume();
             } else {
                 break;
@@ -197,65 +201,128 @@ Token Lexer::read_name()
 {
     int start_line = _line;
     int start_col = _col;
-    // std::string_view name;
-    // name.push_back(consume());
-    // while (std::isalnum(peek()) or peek() == '_') { name.push_back(consume()); }
     size_t start = _pos;
-    while (std::isalnum(peek()) or peek() == '_')
-        consume();
+    while (is_identifier_character(consume()));
+    _pos--;
     auto nm = _src.substr(start, _pos - start);
-    static const std::unordered_map<std::string_view, TokenType> keywords = {
-        { "nil",       TokenType::NIL       },
-        { "true",      TokenType::TRUE      },
-        { "false",     TokenType::FALSE     },
-        { "function",  TokenType::FUNCTION  },
-        { "end",       TokenType::END       },
-        { "do",        TokenType::DO        },
-        { "if",        TokenType::IF        },
-        { "then",      TokenType::THEN      },
-        { "else",      TokenType::ELSE      },
-        { "elseif",    TokenType::ELSEIF    },
-        { "while",     TokenType::WHILE     },
-        { "repeat",    TokenType::REPEAT    },
-        { "until",     TokenType::UNTIL     },
-        { "for",       TokenType::FOR       },
-        { "in",        TokenType::IN        },
-        { "break",     TokenType::BREAK     },
-        { "goto",      TokenType::GOTO      },
-        { "return",    TokenType::RETURN    },
-        { "local",     TokenType::LOCAL     },
-        { "global",    TokenType::GLOBAL    },
-        { "record",    TokenType::RECORD    },
-        { "interface", TokenType::INTERFACE },
-        { "enum",      TokenType::ENUM      },
-        { "type",      TokenType::TYPE      },
-        { "where",     TokenType::WHERE     },
-        { "and",       TokenType::AND       },
-        { "or",        TokenType::OR        },
-        { "not",       TokenType::NOT       },
-        { "as",        TokenType::AS        },
-        { "is",        TokenType::IS        },
-        { "macroexp",  TokenType::MACROEXP  }
-    };
-    auto it = keywords.find(nm);
-    if (it != keywords.end()) return Token { it->second, nm, start_line, start_col };
-    return Token { TokenType::NAME, nm, start_line, start_col };
+    _col += nm.size();
+
+    [[likely]]
+    if (nm.size() <= 9) {
+        switch (bit_str(nm)) {
+            case bit_str("nil"):        return Token { TokenType::NIL, nm, start_line, start_col };
+            case bit_str("true"):       return Token { TokenType::TRUE, nm, start_line, start_col };
+            case bit_str("false"):      return Token { TokenType::FALSE, nm, start_line, start_col };
+            case bit_str("end"):        return Token { TokenType::END, nm, start_line, start_col };
+            case bit_str("do"):         return Token { TokenType::DO, nm, start_line, start_col };
+            case bit_str("if"):         return Token { TokenType::IF, nm, start_line, start_col };
+            case bit_str("then"):       return Token { TokenType::THEN, nm, start_line, start_col };
+            case bit_str("else"):       return Token { TokenType::ELSE, nm, start_line, start_col };
+            case bit_str("elseif"):     return Token { TokenType::ELSEIF, nm, start_line, start_col };
+            case bit_str("while"):      return Token { TokenType::WHILE, nm, start_line, start_col };
+            case bit_str("repeat"):     return Token { TokenType::REPEAT, nm, start_line, start_col };
+            case bit_str("until"):      return Token { TokenType::UNTIL, nm, start_line, start_col };
+            case bit_str("for"):        return Token { TokenType::FOR, nm, start_line, start_col };
+            case bit_str("in"):         return Token { TokenType::IN, nm, start_line, start_col };
+            case bit_str("break"):      return Token { TokenType::BREAK, nm, start_line, start_col };
+            case bit_str("goto"):       return Token { TokenType::GOTO, nm, start_line, start_col };
+            case bit_str("return"):     return Token { TokenType::RETURN, nm, start_line, start_col };
+            case bit_str("local"):      return Token { TokenType::LOCAL, nm, start_line, start_col };
+            case bit_str("global"):     return Token { TokenType::GLOBAL, nm, start_line, start_col };
+            case bit_str("record"):     return Token { TokenType::RECORD, nm, start_line, start_col };
+            case bit_str("enum"):       return Token { TokenType::ENUM, nm, start_line, start_col };
+            case bit_str("type"):       return Token { TokenType::TYPE, nm, start_line, start_col };
+            case bit_str("where"):      return Token { TokenType::WHERE, nm, start_line, start_col };
+            case bit_str("and"):        return Token { TokenType::AND, nm, start_line, start_col };
+            case bit_str("or"):         return Token { TokenType::OR, nm, start_line, start_col };
+            case bit_str("not"):        return Token { TokenType::NOT, nm, start_line, start_col };
+            case bit_str("as"):         return Token { TokenType::AS, nm, start_line, start_col };
+            case bit_str("is"):         return Token { TokenType::IS, nm, start_line, start_col };
+
+            //bitstr can only contain 8 chars, so anything after it would make it into an ident
+            case bit_str("function"):
+                [[unlikely]]
+                if (nm.size() > 8)
+                    goto name;
+                return Token { TokenType::FUNCTION, nm, start_line, start_col };
+            case bit_str("macroexp"):
+                [[unlikely]]
+                if (nm.size() > 8)
+                    goto name;
+                return Token { TokenType::MACROEXP, nm, start_line, start_col };
+            case bit_str("interface"):
+                [[unlikely]]
+                if (nm.size() > 9)
+                    goto name;
+                return Token { TokenType::INTERFACE, nm, start_line, start_col };
+
+            name:
+            default:                    return Token { TokenType::NAME, nm, start_line, start_col };
+        }
+    } else {
+        //TODO: check for `interfac`
+        return Token { TokenType::NAME, nm, start_line, start_col };
+    }
+
+    // int start_line = _line;
+    // int start_col = _col;
+    // size_t start = _pos;
+    // while (is_identifier_character(consume()));
+    // _pos--;
+    // auto nm =_src.substr(start, _pos - start);
+    // static const std::unordered_map<std::string_view, TokenType> keywords = {
+    //     { "nil",       TokenType::NIL       },
+    //     { "true",      TokenType::TRUE      },
+    //     { "false",     TokenType::FALSE     },
+    //     { "function",  TokenType::FUNCTION  },
+    //     { "end",       TokenType::END       },
+    //     { "do",        TokenType::DO        },
+    //     { "if",        TokenType::IF        },
+    //     { "then",      TokenType::THEN      },
+    //     { "else",      TokenType::ELSE      },
+    //     { "elseif",    TokenType::ELSEIF    },
+    //     { "while",     TokenType::WHILE     },
+    //     { "repeat",    TokenType::REPEAT    },
+    //     { "until",     TokenType::UNTIL     },
+    //     { "for",       TokenType::FOR       },
+    //     { "in",        TokenType::IN        },
+    //     { "break",     TokenType::BREAK     },
+    //     { "goto",      TokenType::GOTO      },
+    //     { "return",    TokenType::RETURN    },
+    //     { "local",     TokenType::LOCAL     },
+    //     { "global",    TokenType::GLOBAL    },
+    //     { "record",    TokenType::RECORD    },
+    //     { "interface", TokenType::INTERFACE },
+    //     { "enum",      TokenType::ENUM      },
+    //     { "type",      TokenType::TYPE      },
+    //     { "where",     TokenType::WHERE     },
+    //     { "and",       TokenType::AND       },
+    //     { "or",        TokenType::OR        },
+    //     { "not",       TokenType::NOT       },
+    //     { "as",        TokenType::AS        },
+    //     { "is",        TokenType::IS        },
+    //     { "macroexp",  TokenType::MACROEXP  }
+    // };
+    // auto it = keywords.find(nm);
+    // if (it != keywords.end()) { return { it->second, nm, start_line, start_col }; }
+    // return { TokenType::NAME, nm, start_line, start_col };
 }
+
 
 std::expected<Token, Lexer::Error> Lexer::lex()
 {
     skip_whitespace();
-    if (_pos >= _len) return std::unexpected(make_error(Overflow {}));
-    skip_whitespace();
-    if (_pos >= _len) return std::unexpected(make_error(Overflow {}));
+    if (_pos >= _len) return std::unexpected(make_error(EndOfFile {}));
     char c = peek();
-    if (_pos >= _len) return std::unexpected(make_error(Overflow {}));
-    int tok_line = _line;
+
+    int tok_line =_line;
     int tok_col = _col;
-    if (c == '\"' or c == '\'' or (c == '[' and (peek(1) == '[' or peek(1) == '='))) return read_string();
+    if (c == '\"' or c == '\'' or (c == '[' and (peek(1) == '[' or peek(1) == '=')))
+        return read_string();
 
     if (std::isdigit(c)) return read_number();
-    if (std::isalpha(c) or c == '_') return read_name();
+    if (is_identifier_character(c))
+        return read_name();
     switch (c) {
     case '.':
         consume();
@@ -373,7 +440,7 @@ std::expected<Token, Lexer::Error> Lexer::lex()
     }
 }
 
-std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize()
+std::pair<const std::vector<Token> &, const std::vector<Lexer::Error> &> Lexer::tokenize()
 {
     auto lines = split(_src, "\n");
     while (true) {
@@ -385,139 +452,11 @@ std::pair<std::vector<Token>, std::vector<Lexer::Error>> Lexer::tokenize()
                 break;
             }
             auto e = val.error();
-            if (std::holds_alternative<Overflow>(e.kind)) {
+            if (std::holds_alternative<EndOfFile>(e.kind)) {
                 _tokens.push_back(Token { TokenType::END_OF_FILE, "<EOF>", _line, _col });
                 break;
             } else _errors.push_back(e);
         }
     }
     return { _tokens, _errors };
-}
-
-void Lexer::Tests::basic_keyword()
-{
-    std::string input = "nil";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(errors.empty());
-    assert(tokens.size() >= 2);
-    assert(tokens[0].type == TokenType::NIL);
-    assert(tokens[0].text == "nil");
-    std::cout << "testBasicKeyword passed.\n";
-}
-
-void Lexer::Tests::numbers()
-{
-    std::string input = "123 456.789 0x1aF";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(errors.empty());
-    assert(tokens[0].type == TokenType::NUMBER);
-    assert(tokens[0].text == "123");
-    assert(tokens[1].type == TokenType::NUMBER);
-    assert(tokens[1].text == "456.789");
-    assert(tokens[2].type == TokenType::NUMBER);
-    assert(tokens[2].text == "0x1aF");
-    std::cout << "testNumbers passed.\n";
-}
-
-void Lexer::Tests::strings()
-{
-    std::string input = "'hello' \"world\"";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(errors.empty());
-    assert(tokens[0].type == TokenType::STRING);
-    assert(tokens[0].text == "hello");
-    assert(tokens[1].type == TokenType::STRING);
-    assert(tokens[1].text == "world");
-    std::cout << "testStrings passed.\n";
-}
-
-void Lexer::Tests::long_string()
-{
-    std::string input = "[[Hello\nWorld]]";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(errors.empty());
-    assert(tokens[0].type == TokenType::STRING);
-    assert(tokens[0].text == "Hello\nWorld");
-    std::cout << "testLongString passed.\n";
-}
-
-void Lexer::Tests::long_comment()
-{
-    std::string input = "--[==[This is a long comment]==]\n123";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(errors.empty());
-    assert(not tokens.empty());
-    assert(tokens[0].type == TokenType::NUMBER);
-    assert(tokens[0].text == "123");
-    std::cout << "testLongComment passed.\n";
-}
-
-void Lexer::Tests::mixed_tokens()
-{
-    std::string input = "if x == 10 then return x else return 0 end";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(errors.empty());
-    assert(tokens[0].type == TokenType::IF);
-    assert(tokens[1].type == TokenType::NAME and tokens[1].text == "x");
-    assert(tokens[2].type == TokenType::EQUALS);
-    assert(tokens[3].type == TokenType::NUMBER and tokens[3].text == "10");
-    std::cout << "testMixedTokens passed.\n";
-}
-
-void Lexer::Tests::unterminated_string()
-{
-
-#if not defined(NDEBUG)
-    std::string input = "\"unterminated string";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(not errors.empty());
-    bool found_error = false;
-    for (const auto &err : errors) {
-        if (std::holds_alternative<UnterminatedStringLiteral>(err.kind)) {
-            found_error = true;
-            break;
-        }
-    }
-    (void)found_error;
-    assert(found_error);
-    std::cout << "testUnterminatedString passed.\n";
-#endif
-}
-
-void Lexer::Tests::invalid_long_string_delimiter()
-{
-#if not defined(NDEBUG)
-    std::string input = "[=[Invalid long string";
-    Lexer lexer(input);
-    auto [tokens, errors] = lexer.tokenize();
-    assert(not errors.empty());
-    bool found_error = false;
-    for (const auto &err : errors) {
-        if (std::holds_alternative<UnterminatedLongStringLiteral>(err.kind)) {
-            found_error = true;
-            break;
-        }
-    }
-    assert(found_error);
-    std::cout << "testInvalidLongStringDelimiter passed.\n";
-#endif
-}
-
-void Lexer::Tests::run_all()
-{
-    basic_keyword();
-    numbers();
-    strings();
-    long_string();
-    long_comment();
-    mixed_tokens();
-    unterminated_string();
-    invalid_long_string_delimiter();
 }

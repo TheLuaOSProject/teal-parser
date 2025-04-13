@@ -5,7 +5,6 @@
 
 namespace teal::parser
 {
-
     class Parser {
     public:
         struct Expected {};
@@ -18,7 +17,7 @@ namespace teal::parser
             { }
 
             constexpr inline std::string to_string() const
-            { return std::format("Expected {}, got {}", Token::type_to_string(expected_type), got.to_string()); }
+            { return std::format("Expected `{}`, got `{}`", Token::type_to_string(expected_type), got.to_string()); }
         };
 
         struct ExpectedExpression : Expected {
@@ -134,14 +133,14 @@ namespace teal::parser
 
         template <typename T>
             requires std::is_base_of_v<ast::ASTNode, T>
-        constexpr inline std::unique_ptr<T> make_node(const Token &tk, auto &&...args)
+        constexpr inline ast::Pointer<T> make_node(const Token &tk, auto &&...args)
         {
             return std::make_unique<T>(tk, std::forward<decltype(args)>(args)...);
         }
 
         template <typename T>
             requires std::is_base_of_v<ast::ASTNode, T>
-        constexpr inline std::unique_ptr<T> make_node(auto &&...args)
+        constexpr inline ast::Pointer<T> make_node(auto &&...args)
         {
             return std::make_unique<T>(peek_token(), std::forward<decltype(args)>(args)...);
         }
@@ -179,32 +178,32 @@ namespace teal::parser
             }
             return false;
         }
-        constexpr inline void push_error(const Error::Kind_t &err, bool nothrow = false, std::source_location loc = std::source_location::current())
+        constexpr inline void push_error(const Error::Kind_t &err, bool nothrow = false $on_debug(, std::source_location loc = std::source_location::current()))
         {
-            _errors.push_back(Error(err, peek_token().line, peek_token().col, loc));
+            _errors.push_back(Error(err, peek_token().line, peek_token().col $on_debug(, loc)));
             if (_errors.size() >= max_errors and not nothrow) throw StopParsingException {};
         }
 
-        std::optional<Token> consume(TokenType t, const Error::Kind_t &err_msg, bool nothrow = false, std::source_location loc = std::source_location::current())
+        std::optional<Token> consume(TokenType t, const Error::Kind_t &err_msg, bool nothrow = false $on_debug(, std::source_location loc = std::source_location::current()))
         {
             Token tok = peek_token();
             if (check(t)) {
                 _pos++;
                 return tok;
             } else {
-                push_error(err_msg, nothrow, loc);
+                push_error(err_msg, nothrow $on_debug(, loc));
                 return std::nullopt;
             }
         }
 
-        std::optional<Token> consume(TokenType t, bool nothrow = false, std::source_location loc = std::source_location::current())
+        std::optional<Token> consume(TokenType t, bool nothrow = false $on_debug(, std::source_location loc = std::source_location::current()))
         {
             Token tok = peek_token();
             if (check(t)) {
                 _pos++;
                 return tok;
             } else {
-                push_error(ExpectedToken(t, tok), nothrow, loc);
+                push_error(ExpectedToken(t, tok), nothrow $on_debug(, loc));
                 return std::nullopt;
             }
         }

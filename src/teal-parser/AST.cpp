@@ -26,7 +26,7 @@ using namespace std::string_literals;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-value"
 
-// #define $field(val, ...) std::pair<std::string, std::unique_ptr<Value>> { #val, Value::from((val __VA_OPT__(,
+// #define $field(val, ...) std::pair<std::string, Pointer<Value>> { #val, Value::from((val __VA_OPT__(,
 // __VA_ARGS__))) }
 #define $field(val, ...) obj[#val] = Value::from((val __VA_OPT__(, __VA_ARGS__)))
 
@@ -182,7 +182,7 @@ $serialisation(IsTypeExpression)({
 //         if (std::holds_alternative<std::string>(key))
 //             v = std::get<std::string>(key);
 //         else
-//             v = std::get<std::unique_ptr<Expression>>(key)->serialise();
+//             v = std::get<Pointer<Expression>>(key)->serialise();
 //         std::move(v);
 //     }));
 //     o["value"] = Value::from(value);
@@ -195,7 +195,7 @@ $serialisation(TableConstructorExpression::KeyValuePair, Object())({
     $field(key, ({
                auto v = Value();
                if (std::holds_alternative<std::string_view>(key)) v = std::get<std::string_view>(key);
-               else v = std::get<std::unique_ptr<Expression>>(key)->serialise();
+               else v = std::get<Pointer<Expression>>(key)->serialise();
                std::move(v);
            }));
     $field(value);
@@ -208,8 +208,8 @@ $serialisation(TableConstructorExpression)({
                arr.reserve(fields.size());
 
                for (auto &v : fields) {
-                   if (std::holds_alternative<std::unique_ptr<Expression>>(v)) {
-                       arr.push_back(Value::from(std::get<std::unique_ptr<Expression>>(v)->serialise()));
+                   if (std::holds_alternative<Pointer<Expression>>(v)) {
+                       arr.push_back(Value::from(std::get<Pointer<Expression>>(v)->serialise()));
                    } else {
                        arr.push_back(Value::from(std::get<KeyValuePair>(v).serialise()));
                    }

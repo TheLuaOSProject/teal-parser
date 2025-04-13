@@ -21,6 +21,13 @@
 
 namespace teal::parser
 {
+#ifndef NDEBUG
+#   define $on_debug(...) __VA_ARGS__
+#   define $on_release(...)
+#else
+#   define $on_debug(...)
+#   define $on_release(...) __VA_ARGS__
+#endif
     // concept Stringable = requires(const std::string &s) {
     //     { s.to_string() } -> std::convertible_to<std::string>;
     // };
@@ -34,15 +41,26 @@ namespace teal::parser
     template <typename... T>
     Overload(T...) -> Overload<T...>;
 
+    constexpr uint64_t bit_str(std::string_view data)
+    {
+        auto result = std::array<char, 8>();
+
+        
+        for (size_t i = 0; i < std::min(data.size(), result.max_size()); i++)
+            result[i] = data[i];
+
+        return std::bit_cast<uint64_t>(result);
+    }
+
     template <typename... T> // requires Stringable<T>
     struct Error {
         using Kind_t = std::variant<T...>;
         Kind_t kind;
         size_t line, column;
-        std::source_location location;
+        $on_debug (std::source_location location;)
 
-        Error(Kind_t kind, size_t line, size_t column, std::source_location location = std::source_location::current()) :
-            kind(kind), line(line), column(column), location(location)
+        Error(Kind_t kind, size_t line, size_t column $on_debug(, std::source_location location = std::source_location::current())) :
+            kind(kind), line(line), column(column) $on_debug (, location(location))
         {
         }
 
@@ -54,7 +72,10 @@ namespace teal::parser
                         if constexpr (requires { e.to_string(); }) {
                             return e.to_string();
                         } else {
-                            return std::format("[{}:{}] Error at {}:{} - {}", location.file_name(), location.line(), line, column, typeid(e).name());
+                            $on_debug (
+                                return std::format("[{}:{}] Error at {}:{} - {}", location.file_name(), location.line(), line, column, typeid(e).name());
+                            )
+                            return std::format("Error at {}:{} - {}", line, column, typeid(e).name());
                         }
                     },
                 },

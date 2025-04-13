@@ -28,15 +28,15 @@ namespace teal::parser::ast::v2
     struct Expression : ASTNode {};
 
     struct NameExpression : Expression {
-        std::string value;
+        std::string_view value;
     };
 
     struct NumberExpression : Expression {
-        std::string value;
+        std::string_view value;
     };
 
     struct StringExpression : Expression {
-        std::string value;
+        std::string_view value;
     };
 
     struct BooleanExpression : Expression {

@@ -49,10 +49,17 @@ int main(int argc, char *argv[])
 
     auto len = to_ms(end - start);
     std::println("Lexing took {}", len);
+    std::println("{} tokens", tks.size());
 
     if (errs.size() > 0) {
         std::println(stderr, "Lexing errors:");
-        for (auto err : errs) { std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column); }
+        for (auto err : errs) {
+        #ifdef NDEBUG
+            std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column);
+        #else
+            std::println("    - [{}:{}] {} ({}:{}:{})", err.location.file_name(), err.location.line(), err.to_string(), filename, err.line, err.column);
+        #endif
+        }
         return 1;
     }
 
@@ -67,11 +74,19 @@ int main(int argc, char *argv[])
 
     if (perrs.size() > 0) {
         std::println(stderr, "Parser errors:");
-        for (auto err : perrs) { std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column); }
+        for (auto err : perrs) {
+        #ifdef NDEBUG
+            std::println("    - {} ({}:{}:{})", err.to_string(), filename, err.line, err.column);
+        #else
+            std::println("    - [{}:{}] {} ({}:{}:{})", err.location.file_name(), err.location.line(), err.to_string(), filename, err.line, err.column);
+        #endif
+        }
         return 1;
     }
 
     std::println("{} blocks", root->statements.size());
+
+    {return 0;}
 
     start = std::chrono::steady_clock::now();
     auto obj = teal::parser::ast::serialisation::Value::from(root->serialise());

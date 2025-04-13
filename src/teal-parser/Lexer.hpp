@@ -5,9 +5,9 @@
 #include <cctype>
 #include <expected>
 #include <functional>
+#include <ranges>
 #include <string>
 #include <unordered_map>
-#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -325,11 +325,9 @@ namespace teal::parser
             constexpr inline std::string to_string() const { return std::format("Invalid long string delimiter: '{}'", delimiter); }
         };
 
-        struct Overflow {
-            constexpr inline std::string to_string() const { return "Lexer overflow"; }
+        struct EndOfFile {
+            constexpr inline std::string to_string() const { return "End of input"; }
         };
-
-        struct UnexpectedEOF {};
 
         struct TooManyErrors {
             size_t error_count;
@@ -338,17 +336,33 @@ namespace teal::parser
         };
 
         using Error = teal::parser::Error<
-            InvalidCharacter, InvalidLongStringDelimiter, UnterminatedLongComment, UnterminatedStringLiteral, UnterminatedLongStringLiteral, Overflow,
-            TooManyErrors, UnexpectedEOF>;
+            InvalidCharacter, InvalidLongStringDelimiter, UnterminatedLongComment, UnterminatedStringLiteral, UnterminatedLongStringLiteral,
+            TooManyErrors, EndOfFile>;
+
+        static constexpr auto INITAL_TOKEN_COUNT = 0xFFFF;
 
         constexpr Lexer(std::string_view source) : max_errors(10), _src(source), _len(source.size()), _pos(0), _line(1), _col(1), _tokens(), _errors()
         {
-            _tokens.reserve(_len);
+            $on_release(_tokens.reserve(INITAL_TOKEN_COUNT));
         }
-        std::pair<std::vector<Token>, std::vector<Error>> tokenize();
+        std::pair<const std::vector<Token> &, const std::vector<Error> &> tokenize();
         std::expected<Token, Error> lex();
 
         const size_t max_errors;
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc99-designator"
+        constexpr static bool IDENTIFIER_CHARS[CHAR_MAX] = {
+            ['0' ... '9'] = true, ['A' ... 'Z'] = true, ['a' ... 'z'] = true, ['_'] = true,
+            ['$'] = true, // maybe?
+        };
+#pragma clang diagnostic pop
+
+        [[gnu::const]]
+        constexpr static inline bool is_identifier_character(char c)
+        {
+            return IDENTIFIER_CHARS[(int)c];
+        }
 
     private:
         std::string_view _src;
@@ -359,9 +373,9 @@ namespace teal::parser
         std::vector<Error> _errors;
 
         [[gnu::const]]
-        constexpr inline Error make_error(Error::Kind_t err, std::source_location loc = std::source_location::current()) const
+        constexpr inline Error make_error(Error::Kind_t err $on_debug(, std::source_location loc = std::source_location::current())) const
         {
-            return Error(err, _line, _col, loc);
+            return Error(err, _line, _col $on_debug(, loc));
         }
 
         constexpr inline void push_error(Error::Kind_t err) { _errors.push_back(make_error(err)); }
@@ -372,8 +386,7 @@ namespace teal::parser
             [[likely]]
             if (_pos + look_ahead < _len and _pos + look_ahead >= 0)
                 return _src[_pos + look_ahead];
-            else
-                return '\0';
+            else return '\0';
             // return (pos + look_ahead < length and pos + look_ahead >= 0 ? src[pos + look_ahead] : '\0');
         }
 
@@ -382,14 +395,16 @@ namespace teal::parser
         {
             int idx = _tokens.size() - look_behind;
             [[unlikely]]
-            if (idx < 0 or size_t(idx) > _tokens.size()) return std::nullopt;
+            if (idx < 0 or size_t(idx) > _tokens.size())
+                return std::nullopt;
             return _tokens[idx];
         }
 
         char consume()
         {
             [[unlikely]]
-            if (_pos >= _len) return '\0';
+            if (_pos >= _len)
+                return '\0';
 
             char c = _src[_pos++];
             if (c == '\r' or c == '\n') {
@@ -402,12 +417,30 @@ namespace teal::parser
             return c;
         }
 
+        
+
         void skip_whitespace()
         {
-            while (true) {
-                char c = peek();
-                if (c == ' ' or c == '\t' or c == '\r' or c == '\n') {
-                    consume();
+            while (_pos < _len) {
+                const char c = _src[_pos];
+
+                if (c == ' ') {
+                    _pos++;
+                    _col++;
+                } else if (c == '\n') {
+                    _pos++;
+                    _line++;
+                    _col = 1;
+                } else if (c == '\t') {
+                    _pos++;
+                    _col++;
+                } else if (c == '\r') {
+                    _pos++;
+                    if (_pos < _len and _src[_pos] == '\n') {
+                        _pos++; // Consume the '\n' as well
+                    }
+                    _line++;
+                    _col = 1;
                 } else {
                     break;
                 }
@@ -431,21 +464,6 @@ namespace teal::parser
         }
 
         Token read_name();
-
-    public:
-        class Tests {
-        public:
-            void basic_keyword();
-            void numbers();
-            void strings();
-            void long_string();
-            void long_comment();
-            void mixed_tokens();
-            void unterminated_string();
-            void invalid_long_string_delimiter();
-
-            void run_all();
-        };
     };
 
 } // namespace teal::parser
