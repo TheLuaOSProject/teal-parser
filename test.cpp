@@ -88,26 +88,26 @@ int main(int argc, char *argv[])
 
     {return 0;}
 
-    start = std::chrono::steady_clock::now();
-    auto obj = teal::parser::ast::serialisation::Value::from(root->serialise());
-    end = std::chrono::steady_clock::now();
-    len = to_ms(end - start);
+    // start = std::chrono::steady_clock::now();
+    // auto obj = teal::parser::ast::serialisation::Value::from(root->serialise());
+    // end = std::chrono::steady_clock::now();
+    // len = to_ms(end - start);
 
-    std::println("Serialisation took {}", len);
+    // std::println("Serialisation took {}", len);
 
-    start = std::chrono::steady_clock::now();
-    auto json = obj->to_json();
-    end = std::chrono::steady_clock::now();
-    len = to_ms(end - start);
-    std::println("JSON took {}", len);
+    // start = std::chrono::steady_clock::now();
+    // auto json = obj->to_json();
+    // end = std::chrono::steady_clock::now();
+    // len = to_ms(end - start);
+    // std::println("JSON took {}", len);
 
-    auto f = std::fopen("AST.json", "w+b");
-    if (f == nullptr) {
-        std::println(stderr, "Failed to open AST.json");
-        return 0;
-    }
-    std::fwrite(json.data(), 1, json.size(), f);
-    std::fclose(f);
+    // auto f = std::fopen("AST.json", "w+b");
+    // if (f == nullptr) {
+    //     std::println(stderr, "Failed to open AST.json");
+    //     return 0;
+    // }
+    // std::fwrite(json.data(), 1, json.size(), f);
+    // std::fclose(f);
 
     // auto tycheck = teal::parser::typecheck::TypeChecker();
     // start = std::chrono::steady_clock::now();

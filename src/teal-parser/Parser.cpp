@@ -25,20 +25,21 @@ struct std::formatter<TokenType> {
     }
 };
 
-ast::Pointer<Block> Parser::parse_chunk()
+UnionSlice<ast::Block> Parser::parse_chunk()
 {
-    auto block = make_node<Block>();
+    auto stats = std::vector<ast::Statement>();
     while (not is_at_end()) {
         if (check(TokenType::END_OF_FILE)) break;
         auto stmt = parse_stat();
-        if (stmt) block->statements.push_back(std::move(stmt));
+        if (stmt) stats.push_back(stmt.value());
     }
-    return block;
+
+    return make_node(Block { .statements = stats });
 }
 
-ast::Pointer<Statement> Parser::parse_stat()
+std::optional<ast::Statement> Parser::parse_stat()
 {
-    if (match(TokenType::SEMICOLON)) return nullptr;
+    if (match(TokenType::SEMICOLON)) return std::nullopt;
     TokenType t = peek_token().type;
     Visibility vis;
     switch (t) {
@@ -82,27 +83,27 @@ ast::Pointer<Statement> Parser::parse_stat()
 
     case TokenType::RETURN: {
         _pos++;
-        auto ret_stmt = make_node<ReturnStatement>();
+        std::vector<ast::Expression> vals;;
         if (not check(TokenType::SEMICOLON) and not check(TokenType::END) and not check(TokenType::ELSE)
             and not check(TokenType::ELSEIF) and not check(TokenType::UNTIL) and not check(TokenType::END_OF_FILE)) {
-            ret_stmt->values = parse_expression_list();
+            vals = parse_expression_list();
         }
         match(TokenType::SEMICOLON);
-        return ret_stmt;
+        return make_node(ReturnStatement { .values = vals });
     }
     case TokenType::BREAK:
         _pos++;
-        return make_node<BreakStatement>();
+        return make_node(BreakStatement {});
     case TokenType::GOTO: {
         _pos++;
         if (not check(TokenType::NAME)) {
             // $push_error("expected label name after 'goto'");
             push_error(ExpectedToken(TokenType::NAME, peek_token()));
-            return nullptr;
+            return std::nullopt;
         }
         auto label_name = peek_token().text;
         _pos++;
-        return make_node<GotoStatement>(label_name);
+        return make_node(GotoStatement { .label = label_name });
     }
     case TokenType::DOUBLE_COLON:
         return parse_label();
@@ -111,22 +112,25 @@ ast::Pointer<Statement> Parser::parse_stat()
     }
 }
 
-ast::Pointer<Statement> Parser::parse_assignment_or_call()
+std::optional<UnionSlice<ast::AssignmentStatement, ast::CallStatement>> Parser::parse_assignment_or_call()
 {
     const Token &prefix_tk = peek_token();
     auto prefix = parse_prefix_expression();
     if (not prefix) {
         skip_to_next_statement();
-        return nullptr;
+        return std::nullopt;
     }
     if (check(TokenType::ASSIGN) or check(TokenType::COMMA)) {
-        if (dynamic_cast<FunctionCallExpression *>(prefix.get())) {
-            // $push_error("cannot assign to function call");
-            push_error(CannotAssignToFunctionCall());
-            prefix = make_node<NameExpression>("_error_");
+        auto val = prefix.value();
+        if (val.holds_alternative<ast::FunctionCallExpression>()) {
+            push_error(UnexpectedFunctionCall());
+            skip_to_next_statement();
+            // return std::nullopt;
+            prefix = make_node(NameExpression { .name = "ERROR" });
         }
-        auto assign = make_node<AssignmentStatement>();
-        assign->left.push_back(std::move(prefix));
+        
+        auto assign = make_node(AssignmentStatement {});
+        assign->left.push_back(val);
         while (match(TokenType::COMMA)) {
             auto var = parse_var_expression();
             if (not var) {
@@ -157,7 +161,7 @@ ast::Pointer<Statement> Parser::parse_assignment_or_call()
     }
 }
 
-ast::Pointer<Statement> Parser::parse_label()
+ast::Pointer<StatementNode> Parser::parse_label()
 {
     // consume(TokenType::DOUBLE_COLON);
     consume(TokenType::DOUBLE_COLON);
@@ -172,7 +176,7 @@ ast::Pointer<Statement> Parser::parse_label()
     return make_node<LabelStatement>(std::move(name));
 }
 
-ast::Pointer<Statement> Parser::parse_if()
+ast::Pointer<StatementNode> Parser::parse_if()
 {
     const Token &iftk = peek_token();
     consume(TokenType::IF);
@@ -219,7 +223,7 @@ ast::Pointer<Statement> Parser::parse_if()
     return if_stmt;
 }
 
-ast::Pointer<Statement> Parser::parse_while()
+ast::Pointer<StatementNode> Parser::parse_while()
 {
     consume(TokenType::WHILE);
     auto while_stmt = make_node<WhileStatement>();
@@ -238,7 +242,7 @@ ast::Pointer<Statement> Parser::parse_while()
     return while_stmt;
 }
 
-ast::Pointer<Statement> Parser::parse_repeat()
+ast::Pointer<StatementNode> Parser::parse_repeat()
 {
     consume(TokenType::REPEAT);
     auto repeat_stmt = make_node<RepeatStatement>();
@@ -256,7 +260,7 @@ ast::Pointer<Statement> Parser::parse_repeat()
     return repeat_stmt;
 }
 
-ast::Pointer<Statement> Parser::parse_for()
+ast::Pointer<StatementNode> Parser::parse_for()
 {
     consume(TokenType::FOR);
     if (not check(TokenType::NAME)) {
@@ -312,7 +316,7 @@ ast::Pointer<Statement> Parser::parse_for()
     }
 }
 
-ast::Pointer<Statement> Parser::parse_do()
+ast::Pointer<StatementNode> Parser::parse_do()
 {
     consume(TokenType::DO);
     auto block_node = make_node<Block>();
@@ -325,7 +329,7 @@ ast::Pointer<Statement> Parser::parse_do()
     return make_node<DoStatement>(std::move(block_node));
 }
 
-ast::Pointer<Statement> Parser::parse_function_decl(Visibility vis, bool is_macroexp)
+ast::Pointer<StatementNode> Parser::parse_function_decl(Visibility vis, bool is_macroexp)
 {
     if (not check(TokenType::NAME)) push_error(ExpectedToken(TokenType::NAME, peek_token()));
     std::vector<std::string_view> name_path;
@@ -419,7 +423,7 @@ ast::Pointer<Statement> Parser::parse_function_decl(Visibility vis, bool is_macr
     return func_decl;
 }
 
-ast::Pointer<Statement> Parser::parse_var_decl(Visibility vis)
+ast::Pointer<StatementNode> Parser::parse_var_decl(Visibility vis)
 {
     auto var_stmt = make_node<VariableDeclarationStatement>(vis);
     auto names = parse_att_name_list();
@@ -436,7 +440,7 @@ ast::Pointer<Statement> Parser::parse_var_decl(Visibility vis)
     return var_stmt;
 }
 
-ast::Pointer<Statement> Parser::parse_record_decl(Visibility vis, bool is_interface)
+ast::Pointer<StatementNode> Parser::parse_record_decl(Visibility vis, bool is_interface)
 {
     if (not check(TokenType::NAME)) {
         push_error(ExpectedToken(TokenType::NAME, peek_token()));
@@ -448,7 +452,7 @@ ast::Pointer<Statement> Parser::parse_record_decl(Visibility vis, bool is_interf
     return make_node<RecordDeclarationStatement>(is_interface, vis, std::move(name), std::move(body));
 }
 
-ast::Pointer<Statement> Parser::parse_enum_decl(Visibility vis)
+ast::Pointer<StatementNode> Parser::parse_enum_decl(Visibility vis)
 {
     if (not check(TokenType::NAME)) {
         push_error(ExpectedToken(TokenType::NAME, peek_token()));
@@ -460,7 +464,7 @@ ast::Pointer<Statement> Parser::parse_enum_decl(Visibility vis)
     return make_node<EnumDeclarationStatement>(vis, std::move(name), std::move(body));
 }
 
-ast::Pointer<Statement> Parser::parse_type_alias_decl(Visibility vis)
+ast::Pointer<StatementNode> Parser::parse_type_alias_decl(Visibility vis)
 {
     if (not check(TokenType::NAME)) {
         push_error(ExpectedToken(TokenType::NAME, peek_token()));
@@ -530,11 +534,11 @@ std::vector<std::string_view> Parser::parse_name_list()
     return list;
 }
 
-ast::Pointer<Expression> Parser::parse_expression() { return parse_exp_rec(1); }
+ast::Pointer<ExpressionNode> Parser::parse_expression() { return parse_exp_rec(1); }
 
-std::vector<ast::Pointer<Expression>> Parser::parse_expression_list()
+std::vector<ast::Pointer<ExpressionNode>> Parser::parse_expression_list()
 {
-    std::vector<ast::Pointer<Expression>> exprs;
+    std::vector<ast::Pointer<ExpressionNode>> exprs;
     auto first = parse_expression();
     if (first) exprs.push_back(std::move(first));
     while (match(TokenType::COMMA)) {
@@ -550,9 +554,9 @@ std::vector<ast::Pointer<Expression>> Parser::parse_expression_list()
     return exprs;
 }
 
-ast::Pointer<Expression> Parser::parse_prefix_expression()
+ast::Pointer<ExpressionNode> Parser::parse_prefix_expression()
 {
-    ast::Pointer<Expression> base;
+    ast::Pointer<ExpressionNode> base;
     if (match(TokenType::L_PAREN)) {
         base = parse_expression();
         consume(TokenType::R_PAREN);
@@ -575,7 +579,7 @@ ast::Pointer<Expression> Parser::parse_prefix_expression()
             }
             auto method = peek_token().text;
             _pos++;
-            std::vector<ast::Pointer<Expression>> args;
+            std::vector<ast::Pointer<ExpressionNode>> args;
             if (match(TokenType::L_PAREN)) {
                 if (not check(TokenType::R_PAREN)) { args = parse_expression_list(); }
                 consume(TokenType::R_PAREN);
@@ -593,7 +597,7 @@ ast::Pointer<Expression> Parser::parse_prefix_expression()
             for (auto &arg : args) call->arguments.push_back(std::move(arg));
             base = std::move(call);
         } else if (match(TokenType::L_PAREN)) {
-            std::vector<ast::Pointer<Expression>> args;
+            std::vector<ast::Pointer<ExpressionNode>> args;
             if (not check(TokenType::R_PAREN)) { args = parse_expression_list(); }
             consume(TokenType::R_PAREN);
             auto call = make_node<FunctionCallExpression>(std::move(base), "");
@@ -657,7 +661,7 @@ ast::Pointer<Expression> Parser::parse_prefix_expression()
     return base;
 }
 
-ast::Pointer<Expression> Parser::parse_var_expression()
+ast::Pointer<ExpressionNode> Parser::parse_var_expression()
 {
     auto expr = parse_prefix_expression();
     if (not expr) return nullptr;
@@ -669,7 +673,7 @@ ast::Pointer<Expression> Parser::parse_var_expression()
     return expr;
 }
 
-ast::Pointer<Expression> Parser::parse_primary_expression()
+ast::Pointer<ExpressionNode> Parser::parse_primary_expression()
 {
     TokenType t = peek_token().type;
     if (t == TokenType::NIL) {
@@ -708,7 +712,7 @@ ast::Pointer<Expression> Parser::parse_primary_expression()
     return nullptr;
 }
 
-ast::Pointer<Expression> Parser::parse_exp_rec(int min_prec)
+ast::Pointer<ExpressionNode> Parser::parse_exp_rec(int min_prec)
 {
     auto left = parse_unary_expression();
     while (true) {
@@ -791,7 +795,7 @@ int Parser::get_binary_precedence(TokenType op)
 
 bool Parser::is_right_associative(TokenType op) { return (op == TokenType::CONCAT or op == TokenType::POW); }
 
-ast::Pointer<Expression> Parser::parse_unary_expression()
+ast::Pointer<ExpressionNode> Parser::parse_unary_expression()
 {
     if (check(TokenType::NOT) or check(TokenType::SUB) or check(TokenType::LENGTH) or check(TokenType::BIT_XOR)) {
         TokenType token = peek_token().type;
@@ -841,7 +845,7 @@ bool Parser::parse_typeargs(std::vector<ast::Pointer<TypeNode>> *types)
     return true;
 }
 
-ast::Pointer<Expression> Parser::parse_function_def_expression()
+ast::Pointer<ExpressionNode> Parser::parse_function_def_expression()
 {
     consume(TokenType::FUNCTION);
     auto func_body = make_node<FunctionBody>();
@@ -890,7 +894,7 @@ ast::Pointer<Expression> Parser::parse_function_def_expression()
     return make_node<FunctionDefinitionExpression>(std::move(func_body));
 }
 
-ast::Pointer<Expression> Parser::parse_table_constructor()
+ast::Pointer<ExpressionNode> Parser::parse_table_constructor()
 {
     consume(TokenType::L_BRACE);
     auto table = make_node<TableConstructorExpression>();
@@ -920,7 +924,7 @@ ast::Pointer<Expression> Parser::parse_table_constructor()
                 kvp.value = parse_expression();
                 field = std::move(kvp);
             } else { // expression, array part of the table
-                ast::Pointer<Expression> expr_ptr = parse_expression();
+                ast::Pointer<ExpressionNode> expr_ptr = parse_expression();
                 field = std::move(expr_ptr);
             }
 

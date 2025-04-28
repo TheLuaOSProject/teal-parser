@@ -110,18 +110,25 @@ namespace teal::parser
             GlobalVariableMustBeTyped
         >;
 
-        Parser(std::vector<Token> toks) : max_errors(10), _tokens(std::move(toks)), _pos(0) { }
-        std::tuple<std::unique_ptr<ast::Block>, std::vector<Error>> parse()
+        Parser(std::vector<Token> toks) : max_errors(10), _tokens(std::move(toks)), _pos(0), _nodes()
+        {
+            //TODO: Change `_nodes` into a custom datastructure that can be "frozen", we cannot have any more reallocations as it would break all pointers
+            _nodes.reserve(_tokens.size());
+        }
+        std::tuple<std::optional<std::reference_wrapper<const ast::Block>>, std::vector<Error>> parse()
         {
             try {
-                return { parse_chunk(), _errors };
+                return { parse_chunk().get_index_unsafe<0>(), _errors };
             } catch (const StopParsingException &) {
                 push_error(TooManyErrors { _errors.size() }, true);
-                return { nullptr, _errors };
+                return { std::nullopt, _errors };
             }
         }
 
         const size_t max_errors;
+
+        Parser(const Parser &) = delete;
+        Parser(Parser &&) = delete;
 
     private:
         class StopParsingException : public std::exception { };
@@ -131,21 +138,37 @@ namespace teal::parser
         size_t _pos;
         std::vector<Error> _errors;
 
+        std::vector<ast::AST> _nodes;
+
+        //check if this is a `Union` or `UnionSlice`, even if the base isn't a `ASTNode`
+        template <typename TSlice> requires requires { TSlice::slice; }
+        constexpr inline TSlice make_node(auto &&...args) = delete("Do not make_node with a slice! it's already allocated");
+
         template <typename T>
-            requires std::is_base_of_v<ast::ASTNode, T>
-        constexpr inline ast::Pointer<T> make_node(const Token &tk, auto &&...args)
+        constexpr inline UnionSlice<T> make_node(auto &&...args)
         {
-            return std::make_unique<T>(tk, std::forward<decltype(args)>(args)...);
+            return _nodes.emplace_back(peek_token(), T {args...}).template slice<T>();
         }
 
         template <typename T>
-            requires std::is_base_of_v<ast::ASTNode, T>
-        constexpr inline ast::Pointer<T> make_node(auto &&...args)
+        constexpr inline UnionSlice<T> make_node(T &&obj)
         {
-            return std::make_unique<T>(peek_token(), std::forward<decltype(args)>(args)...);
+            return _nodes.emplace_back(peek_token(), obj).template slice<T>();
         }
 
-        const Token &peek_token(int forward = 0) const
+        // template <typename ...T>
+        // constexpr inline UnionSlice<T...> make_node(auto &&...args)
+        // {
+        //     return _nodes.emplace_back(peek_token(), std::forward<decltype(args)>(args)...).template slice<T...>();
+        // }
+
+        // template <typename TUnion> requires requires { TUnion::slice; }
+        // constexpr inline UnionSlice<TUnion> make_node(auto &&...args)
+        // {
+        //     return _nodes.emplace_back(peek_token(), std::forward<decltype(args)>(args)...)();
+        // }
+
+        inline const Token &peek_token(int forward = 0) const
         {
             [[unlikely]]
             if (_pos + forward > _tokens.size())
@@ -222,45 +245,45 @@ namespace teal::parser
             }
         }
 
-        std::unique_ptr<ast::Block> parse_chunk();
-        std::unique_ptr<ast::Statement> parse_stat();
-        std::unique_ptr<ast::Statement> parse_assignment_or_call();
-        std::unique_ptr<ast::Statement> parse_label();
-        std::unique_ptr<ast::Statement> parse_if();
-        std::unique_ptr<ast::Statement> parse_while();
-        std::unique_ptr<ast::Statement> parse_repeat();
-        std::unique_ptr<ast::Statement> parse_for();
-        std::unique_ptr<ast::Statement> parse_do();
-        std::unique_ptr<ast::Statement> parse_function_decl(ast::Visibility vis, bool is_macroexp = false);
-        std::unique_ptr<ast::Statement> parse_var_decl(ast::Visibility vis);
-        std::unique_ptr<ast::Statement> parse_record_decl(ast::Visibility vis, bool is_interface);
-        std::unique_ptr<ast::Statement> parse_enum_decl(ast::Visibility vis);
-        std::unique_ptr<ast::Statement> parse_type_alias_decl(ast::Visibility vis);
+        UnionSlice<ast::Block> parse_chunk();
+        std::optional<ast::Statement> parse_stat();
+        std::optional<UnionSlice<ast::AssignmentStatement, ast::CallStatement>> parse_assignment_or_call();
+        UnionSlice<ast::LabelStatement> parse_label();
+        UnionSlice<ast::IfStatement> parse_if();
+        UnionSlice<ast::WhileStatement> parse_while();
+        UnionSlice<ast::RepeatStatement> parse_repeat();
+        UnionSlice<ast::ForInStatement, ast::ForNumericStatement> parse_for();
+        UnionSlice<ast::DoStatement> parse_do();
+        UnionSlice<ast::FunctionDeclarationStatement> parse_function_decl(ast::Visibility vis, bool is_macroexp = false);
+        UnionSlice<ast::VariableDeclarationStatement> parse_var_decl(ast::Visibility vis);
+        UnionSlice<ast::RecordDeclarationStatement> parse_record_decl(ast::Visibility vis, bool is_interface);
+        UnionSlice<ast::EnumDeclarationStatement> parse_enum_decl(ast::Visibility vis);
+        UnionSlice<ast::TypeAliasStatement> parse_type_alias_decl(ast::Visibility vis);
         std::vector<ast::VariableDeclarationStatement::Name> parse_att_name_list();
         std::vector<std::string_view> parse_name_list();
-        std::unique_ptr<ast::Expression> parse_expression();
-        std::vector<std::unique_ptr<ast::Expression>> parse_expression_list();
-        std::unique_ptr<ast::Expression> parse_prefix_expression();
-        std::unique_ptr<ast::Expression> parse_var_expression();
-        std::unique_ptr<ast::Expression> parse_primary_expression();
-        std::unique_ptr<ast::Expression> parse_exp_rec(int min_prec);
+        ast::Expression parse_expression();
+        std::vector<ast::Expression> parse_expression_list();
+        std::optional<ast::PrefixExpression> parse_prefix_expression();
+        ast::PrefixExpression parse_var_expression();
+        ast::PrimaryExpression parse_primary_expression();
         int get_binary_precedence(TokenType op);
         bool is_right_associative(TokenType op);
-        std::unique_ptr<ast::Expression> parse_unary_expression();
-        std::unique_ptr<ast::Expression> parse_function_def_expression();
-        std::unique_ptr<ast::Expression> parse_table_constructor();
-        std::unique_ptr<ast::TypeNode> parse_type();
-        std::unique_ptr<ast::TypeNode> parse_base_type();
-        std::unique_ptr<ast::TypeNode> parse_nominal_type();
-        std::unique_ptr<ast::TypeNode> parse_function_type();
-        std::vector<std::unique_ptr<ast::TypeNode>> parse_type_list();
-        std::vector<ast::FunctionTypeNode::ParameterType> parse_param_type_list();
-        std::vector<std::unique_ptr<ast::TypeNode>> parse_return_type_list(bool *var_arg);
-        std::unique_ptr<ast::RecordBody> parse_record_body();
-        std::unique_ptr<ast::EnumBody> parse_enum_body();
-        void parse_interface_list(ast::RecordBody *rb);
+        UnionSliceOf_t<ast::PrimaryExpression, Union<ast::UnaryOperationExpression>> parse_unary_expression();
+        UnionSlice<ast::CastExpression, ast::IsTypeExpression, ast::BinaryOperationExpression> parse_exp_rec(int min_prec);
+        UnionSlice<ast::FunctionDefinitionExpression> parse_function_def_expression();
+        UnionSlice<ast::TableConstructorExpression> parse_table_constructor();
+        ast::Type parse_type();
+        ast::Type parse_base_type();
+        UnionSlice<ast::NominalType> parse_nominal_type();
+        UnionSlice<ast::FunctionType> parse_function_type();
+        std::vector<ast::Type> parse_type_list();
+        std::vector<ast::FunctionType::ParameterType> parse_param_type_list();
+        std::vector<ast::Type> parse_return_type_list(bool *var_arg);
+        UnionSlice<ast::RecordBody> parse_record_body();
+        UnionSlice<ast::EnumBody> parse_enum_body();
+        void parse_interface_list(UnionSlice<ast::RecordBody> rb);
         bool parse_generic_list(std::vector<ast::GenericTypeParameter> *t_params);
-        bool parse_typeargs(std::vector<std::unique_ptr<ast::TypeNode>> *types);
+        bool parse_typeargs(std::vector<ast::Type> *types);
     };
 
 } // namespace teal::parser

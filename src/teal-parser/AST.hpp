@@ -10,16 +10,22 @@
 
 namespace teal::parser::ast {
 
-    //Maybe change later? needs to be efficent
     template<typename T>
-    using Pointer = std::unique_ptr<T>;
-    // using Pointer = T *;
+    // using Pointer = std::unique_ptr<T>;
+    using Pointer = T *;
     
-    template<typename T, typename ...TArgs>
-    constexpr inline Pointer<T> allocate(TArgs ...args)
-    { return std::make_unique<T>(std::forward<TArgs>(args)...); }
+    //TODO: This needs to be an IndexPointer<T> so we can change the pointer size from 16 to 8
+    // using Pointer = IndexPointer<T>;
+    // using Pointer = ContainerPointer<T, std::vector>;
 
     namespace serialisation {
+        template<typename T>
+        using Pointer = std::unique_ptr<T>;
+
+        template<typename T, typename ...TArgs>
+        static inline constexpr Pointer<T> allocate(TArgs &&...args)
+        { return std::make_unique<T>(std::forward<TArgs>(args)...); }
+
         struct Value;
         using Object = std::unordered_map<std::string_view, Pointer<Value>>;
         using Array = std::vector<Pointer<Value>>;
@@ -33,6 +39,7 @@ namespace teal::parser::ast {
         using ValueData = std::variant<std::string_view, bool, Number, Object, Array, std::monostate>;
 
         struct Value : public ValueData {
+
             using ValueData::variant;
 
             static inline Pointer<Value> from(Value val) { return allocate<Value>(std::move(val)); }
@@ -46,7 +53,7 @@ namespace teal::parser::ast {
             template <Serialisable T>
             static inline Pointer<Value> from(const Pointer<T> &val)
             {
-                if (val == nullptr) return allocate<Value>(std::monostate());
+                if (val == nullptr) return std::make_unique<Value>(std::monostate());
                 else return Value::from(val->serialise());
             }
 
@@ -166,173 +173,112 @@ namespace teal::parser::ast {
 
 
 // Base AST node classes
-    struct ASTNode {
-        size_t line, column;
+    struct ASTNode {};
 
-        ASTNode(size_t line, size_t column) : line(line), column(column) { }
+#define $(n) struct n;
 
-        ASTNode(const Token &tk) : line(tk.line), column(tk.col) { }
+    struct ExpressionNode : ASTNode {};
+#define $expression_nodes \
+    $(NameExpression) $(NumberExpression) $(StringExpression) $(BooleanExpression) $(NilExpression) $(VarargExpression) \
+    $(FunctionCallExpression) $(IndexExpression) $(FieldExpression) \
+    $(BinaryOperationExpression) $(UnaryOperationExpression) $(FunctionDefinitionExpression) $(CastExpression) $(IsTypeExpression) \
+    $(TableConstructorExpression)
 
-        ASTNode(const ASTNode &other) = delete;
-        ASTNode(ASTNode &&other) = delete;
+    $expression_nodes;
 
-        virtual ~ASTNode() = default;
+    struct StatementNode : ASTNode {};
+#define $statement_nodes \
+    $(Block) $(ReturnStatement) $(BreakStatement) $(GotoStatement) $(LabelStatement) $(DoStatement) \
+    $(IfStatement) $(WhileStatement) $(RepeatStatement) $(ForNumericStatement) $(ForInStatement) \
+    $(FunctionDeclarationStatement) $(VariableDeclarationStatement) $(RecordDeclarationStatement) \
+    $(EnumDeclarationStatement) $(TypeAliasStatement) $(AssignmentStatement) $(CallStatement)
 
-        virtual serialisation::Object serialise() const;
+    $statement_nodes;
 
-        template <typename T>
-            requires std::is_base_of_v<ASTNode, T>
-        constexpr inline bool is() const
-        {
-            return dynamic_cast<const T *>(this) != nullptr;
-        }
+    struct TypeNode : ASTNode {};
+#define $type_nodes \
+    $(BasicType) $(NominalType) $(TableType) $(FunctionType) $(UnionType) \
+    $(RecordType) $(EnumType) $(RequireType)
+
+    $type_nodes;
+#undef $
+
+    struct Unrepresentable {
+        Unrepresentable() = delete;
+        ~Unrepresentable() = delete;
     };
-    struct Expression : ASTNode {
-        Expression(const Token &tk) : ASTNode(tk) { }
 
-        virtual ~Expression() = default;
+#define $(n) n,
+    using Expression = UnionSlice<$expression_nodes Unrepresentable>;
+    using PrefixExpression = UnionSlice<NameExpression, FunctionCallExpression, FieldExpression, IndexExpression>;
+    using PrimaryExpression = UnionSliceOf_t<
+        UnionSlice <NilExpression, BooleanExpression, NumberExpression, StringExpression, VarargExpression, FunctionDefinitionExpression, TableConstructorExpression>,
+        PrefixExpression
+    >;
 
-        template <typename T>
-            requires std::is_base_of_v<Expression, T>
-        constexpr inline bool is() const
-        {
-            return dynamic_cast<const T *>(this) != nullptr;
-        }
-    };
-    struct Statement : ASTNode {
-        Statement(const Token &tk) : ASTNode(tk) { }
+    using Statement = UnionSlice<$statement_nodes Unrepresentable>;
+    using Type = UnionSlice<$type_nodes Unrepresentable>;
+#undef $
+    struct FunctionBody;
+    struct RecordBody;
+    struct EnumBody;
 
-        virtual ~Statement() = default;
+    struct AST;
 
-        template <typename T>
-            requires std::is_base_of_v<Statement, T>
-        constexpr inline bool is() const
-        {
-            return dynamic_cast<const T *>(this) != nullptr;
-        }
-    };
+    // using ASTData = Union<Expression, Statement, Type, FunctionBody, RecordBody, EnumBody, std::monostate>;
+    // struct AST : public ASTData {
+
+    // };
+
+    // template<typename T> //requires IsInUnion<T, AST>
+    // using ASTPointer = UnionPointer<T, AST, Pointer>;
+
+    //TODO: Replace std::vector with some datastructure in the block
 
 // Expression AST nodes
-    struct NameExpression : Expression {
+    struct NameExpression : ExpressionNode {
         std::string_view name;
-        NameExpression(const Token &tk, std::string_view n) : Expression(tk), name(std::move(n)) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct NumberExpression : Expression {
+    struct NumberExpression : ExpressionNode {
         std::string_view value;
-        NumberExpression(const Token &tk, std::string_view v) : Expression(tk), value(std::move(v)) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct StringExpression : Expression {
+    struct StringExpression : ExpressionNode {
         std::string_view value;
-        StringExpression(const Token &tk, std::string_view v) : Expression(tk), value(std::move(v)) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct BooleanExpression : Expression {
+    struct BooleanExpression : ExpressionNode {
         bool value;
-        BooleanExpression(const Token &tk, bool v) : Expression(tk), value(v) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct NilExpression : Expression {
-        NilExpression(const Token &tk) : Expression(tk) { }
-
-        virtual serialisation::Object serialise() const override;
-    };
-    struct VarargExpression : Expression {
-        VarargExpression(const Token &tk) : Expression(tk) { }
-
-        virtual serialisation::Object serialise() const override;
-    }; // represents "..."
-    struct FunctionCallExpression : Expression {
-        Pointer<Expression> base;
+    struct NilExpression : ExpressionNode {};
+    struct VarargExpression : ExpressionNode {}; // represents "..."
+    struct FunctionCallExpression : ExpressionNode {
+        Expression base;
         std::string_view method_name; // method name if invoked with ':'
-        std::vector<Pointer<Expression>> arguments;
-        FunctionCallExpression(const Token &tk, Pointer<Expression> &&base_expr, std::string_view method = "") :
-            Expression(tk), base(std::move(base_expr)), method_name(std::move(method))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+        std::vector<Expression> arguments;
     };
-    struct IndexExpression : Expression {
-        Pointer<Expression> table;
-        Pointer<Expression> index;
-        IndexExpression(const Token &tk, Pointer<Expression> &&tbl, Pointer<Expression> &&idx) :
-            Expression(tk), table(std::move(tbl)), index(std::move(idx))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+    struct IndexExpression : ExpressionNode {
+        Expression table, index;
     };
-    struct FieldExpression : Expression {
-        Pointer<Expression> object;
+    struct FieldExpression : ExpressionNode {
+        Expression object;
         std::string_view field;
-        FieldExpression(const Token &tk, Pointer<Expression> &&obj, std::string_view fld) :
-            Expression(tk), object(std::move(obj)), field(std::move(fld))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
     };
 
-    struct OperationExpression : Expression {
-        TokenType operation;
-
-        OperationExpression(const Token &tk, TokenType op_t) : Expression(tk), operation(op_t) { }
-
-        virtual ~OperationExpression() = default;
-
-        virtual serialisation::Object serialise() const override;
+    struct BinaryOperationExpression : ExpressionNode {
+        Expression left, right;
     };
-
-    struct BinaryOperationExpression : OperationExpression {
-        Pointer<Expression> left, right;
-        BinaryOperationExpression(const Token &tk, TokenType op_t, Pointer<Expression> &&l,
-            Pointer<Expression> &&r) : OperationExpression(tk, op_t), left(std::move(l)), right(std::move(r))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+    struct UnaryOperationExpression : ExpressionNode {
+        Expression operand;
     };
-    struct UnaryOperationExpression : OperationExpression {
-        Pointer<Expression> operand;
-        UnaryOperationExpression(const Token &tk, TokenType opType, Pointer<Expression> &&expr) :
-            OperationExpression(tk, opType), operand(std::move(expr))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
-    };
-
-    struct TypeNode : ASTNode {
-        TypeNode(const Token &tk) : ASTNode(tk) { }
-        virtual ~TypeNode() = default;
-
-        template <typename T>
-            requires std::is_base_of_v<TypeNode, T>
-        constexpr inline bool is() const
-        {
-            return dynamic_cast<const T *>(this) != nullptr;
-        }
-    };
+    
 
 // Block shouldnt be a statement?
-    struct Block : Statement {
-        std::vector<Pointer<Statement>> statements;
-        Block(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct Block : StatementNode {
+        std::vector<Statement> statements;
     };
 
     struct GenericTypeParameter {
         std::string_view name;
         std::optional<std::string_view> is;
-
-        serialisation::Object serialise() const;
     };
 
 // Function body for function definitions (parameters and return types)
@@ -342,250 +288,162 @@ namespace teal::parser::ast {
             std::string_view name;
             bool is_varadict;
             bool is_optional;
-            Pointer<TypeNode> type;
-
-            serialisation::Object serialise() const;
+            Type type;
         };
         std::vector<Parameter> parameters;
-        std::vector<Pointer<TypeNode>> return_types;
+        std::vector<Type> return_types;
         bool varadict_return = false;
-        Pointer<Block> body;
-
-        FunctionBody(const Token &tk) : ASTNode(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+        UnionSlice<Block> body;
     };
 
-    struct FunctionDefinitionExpression : Expression {
-        Pointer<FunctionBody> body;
-        FunctionDefinitionExpression(const Token &tk, Pointer<FunctionBody> &&b) :
-            Expression(tk), body(std::move(b))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+    struct FunctionDefinitionExpression : ExpressionNode {
+        UnionSlice<FunctionBody> body;
     };
-    struct CastExpression : Expression {
-        Pointer<Expression> expression;
-        std::vector<Pointer<TypeNode>> target_types;
-        CastExpression(
-            const Token &tk, Pointer<Expression> &&e, std::vector<Pointer<TypeNode>> &&types) :
-            Expression(tk), expression(std::move(e)), target_types(std::move(types))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+    struct CastExpression : ExpressionNode {
+        Expression expression;
+        std::vector<Type> target_types;
     };
-    struct IsTypeExpression : Expression {
-        Pointer<Expression> expression;
-        Pointer<TypeNode> type;
-        IsTypeExpression(const Token &tk, Pointer<Expression> &&e, Pointer<TypeNode> &&t) :
-            Expression(tk), expression(std::move(e)), type(std::move(t))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+    struct IsTypeExpression : ExpressionNode {
+        Expression expression;
+        Type type;
     };
 
 //{ "this", is = "a", [get_value()] = "table" }
-    struct TableConstructorExpression : Expression {
+    struct TableConstructorExpression : ExpressionNode {
         struct KeyValuePair {
-            std::variant<std::string_view, Pointer<Expression>> key;
-            Pointer<Expression> value;
-            Pointer<TypeNode> type = nullptr; // can be null :)
-
-            serialisation::Object serialise() const;
+            std::variant<std::string_view, Expression> key;
+            Expression value;
+            std::optional<Type> type; // can be null :)
         };
 
-        using Field = std::variant<Pointer<Expression>, KeyValuePair>;
+        using Field = std::variant<Expression, KeyValuePair>;
         std::vector<Field> fields;
 
-        TableConstructorExpression(const Token &tk) : Expression(tk) { }
-
-        virtual serialisation::Object serialise() const override;
     };
 
 // Type AST nodes
-    struct BasicTypeNode : TypeNode {
+    struct BasicType : TypeNode {
         std::string_view name;
-        BasicTypeNode(const Token &tk, std::string_view n) : TypeNode(tk), name(std::move(n)) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct NominalTypeNode : TypeNode {
+    struct NominalType : TypeNode {
         std::vector<std::string_view> name_parts;
-        std::vector<Pointer<TypeNode>> type_arguments;
-        NominalTypeNode(
-            const Token &tk, std::vector<std::string_view> &&parts, std::vector<Pointer<TypeNode>> &&args = {}) :
-            TypeNode(tk), name_parts(std::move(parts)), type_arguments(std::move(args))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+        std::vector<Type> type_arguments;
     };
-    struct TableTypeNode : TypeNode {
-        std::vector<Pointer<TypeNode>> element_types;
-        Pointer<TypeNode> key_type;
+    struct TableType : TypeNode {
+        std::vector<Type> element_types;
+        Type key_type;
         bool is_map;
-        TableTypeNode(const Token &tk) : TypeNode(tk), is_map(false) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct FunctionTypeNode : TypeNode {
+    struct FunctionType : TypeNode {
         std::vector<GenericTypeParameter> type_parameters;
         struct ParameterType {
             std::optional<std::string_view> name;
             bool is_optional;
-            Pointer<TypeNode> type;
-
-            serialisation::Object serialise() const;
+            Type type;
         };
         std::vector<ParameterType> parameters;
-        std::vector<Pointer<TypeNode>> return_types;
-        bool varadict_return = false;
-
-        FunctionTypeNode(const Token &tk) : TypeNode(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+        std::vector<Type> return_types;
+        bool varadict_return;
     };
-    struct UnionTypeNode : TypeNode {
-        std::vector<Pointer<TypeNode>> options;
-        UnionTypeNode(const Token &tk) : TypeNode(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct UnionType : TypeNode {
+        std::vector<Type> options;
     };
 
-    struct RecordBody : ASTNode {
+    struct RecordBody {
         std::vector<GenericTypeParameter> type_parameters;
-        Pointer<TypeNode> structural_ext;
-        std::vector<Pointer<TypeNode>> interface_ext;
-        Pointer<Expression> where_clause;
+        Type structural_ext;
+        std::vector<Type> interface_ext;
+        Expression where_clause;
 
     // todo: Turn this into `std::variant`
-        struct Entry {
-            enum class Kind { FIELD, USERDATA, TYPE_ALIAS, RECORD, ENUM, INTERFACE } entry_kind;
-            bool is_metamethod;
-            std::optional<std::string_view> name;
-            std::optional<std::string_view> key_literal;
-            Pointer<TypeNode> type;
-            std::string_view type_name;
-            Pointer<TypeNode> type_value;
-            std::string_view nested_name;
-            Pointer<ASTNode> nested_body;
-        // Entry() : isMetamethod(false) {}
+        // struct Entry {
+        //     enum class Kind { FIELD, USERDATA, TYPE_ALIAS, RECORD, ENUM, INTERFACE } entry_kind;
+        //     bool is_metamethod;
+        //     std::optional<std::string_view> name;
+        //     std::optional<std::string_view> key_literal;
+        //     Type type;
+        //     std::string_view type_name;
+        //     Type type_value;
+        //     std::string_view nested_name;
+        //     Pointer<ASTNode> nested_body;
+        // };
 
-            serialisation::Object serialise() const;
+        struct Userdata {};
+        struct TypeAlias {
+            std::string_view name;
+            Type type;  
+        };
+        struct Record {
+            std::string_view name;
+            UnionSlice<RecordBody> body;
+        };
+        struct Interface : Record {};
+        struct Enum {
+            std::string_view name;
+            UnionSlice<EnumBody> body;
+        };
+        struct Field {
+            bool is_metamethod;
+            std::string_view name;
+            Type type;
         };
 
+        using Entry = Union<Field, Userdata, TypeAlias, Record, Enum, Interface>;
         std::vector<Entry> entries;
-
-        RecordBody(const Token &tk) : ASTNode(tk) { }
-
-        virtual serialisation::Object serialise() const override;
     };
 
-    struct TypeRecordNode : TypeNode {
-        Pointer<RecordBody> body;
-        TypeRecordNode(const Token &tk, Pointer<RecordBody> &&b) : TypeNode(tk), body(std::move(b)) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct RecordType : TypeNode {
+        UnionSlice<RecordBody> body;
     };
-    struct TypeEnumNode : TypeNode {
+    struct EnumType : TypeNode {
         std::vector<std::string_view> elements;
-        TypeEnumNode(const Token &tk, std::vector<std::string_view> &&elems) : TypeNode(tk), elements(std::move(elems)) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct RequireTypeNode : TypeNode {
+    struct RequireType : TypeNode {
         std::string_view module_name;
         std::vector<std::string_view> type_names;
-        RequireTypeNode(const Token &tk, std::string_view mod, std::vector<std::string_view> &&names) :
-            TypeNode(tk), module_name(std::move(mod)), type_names(std::move(names))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
     };
 
 // Statement AST nodes
-    struct ReturnStatement : Statement {
-        std::vector<Pointer<Expression>> values;
-        ReturnStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct ReturnStatement : StatementNode {
+        std::vector<Expression> values;
     };
-    struct BreakStatement : Statement {
-        BreakStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
-    };
-    struct GotoStatement : Statement {
+    struct BreakStatement : StatementNode {};
+    struct GotoStatement : StatementNode {
         std::string_view label;
-        GotoStatement(const Token &tk, std::string_view lbl) : Statement(tk), label(std::move(lbl)) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct LabelStatement : Statement {
+    struct LabelStatement : StatementNode {
         std::string_view name;
-        LabelStatement(const Token &tk, std::string_view n) : Statement(tk), name(std::move(n)) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct DoStatement : Statement {
-        Pointer<Block> body;
-        DoStatement(const Token &tk, Pointer<Block> &&b) : Statement(tk), body(std::move(b)) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct DoStatement : StatementNode {
+        Statement body;
     };
-    struct IfStatement : Statement {
+    struct IfStatement : StatementNode {
         struct IfBranch {
-            Pointer<Expression> condition;
-            Pointer<Block> block;
-
-            serialisation::Object serialise() const;
+            Expression condition;
+            Statement block;
         };
         std::vector<IfBranch> if_branches;
-        Pointer<Block> else_block;
-
-        IfStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+        UnionSlice<Block> else_block;
     };
-    struct WhileStatement : Statement {
-        Pointer<Expression> condition;
-        Pointer<Block> body;
-
-        WhileStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct WhileStatement : StatementNode {
+        Expression condition;
+        UnionSlice<Block> body;
     };
-    struct RepeatStatement : Statement {
-        Pointer<Block> body;
-        Pointer<Expression> condition;
-
-        RepeatStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct RepeatStatement : StatementNode {
+        Expression condition;
+        UnionSlice<Block> body;
     };
-    struct ForNumericStatement : Statement {
+    struct ForNumericStatement : StatementNode {
         std::string_view variable_name;
         struct {
-            Pointer<Expression> start, end, step;
+            Expression start, end, step;
         } expressions;
-        Pointer<Block> body;
-
-        ForNumericStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+        UnionSlice<Block> body;
     };
-    struct ForInStatement : Statement {
+    struct ForInStatement : StatementNode {
         std::vector<std::string_view> names;
-        std::vector<Pointer<Expression>> exprs;
-        Pointer<Block> body;
-
-        ForInStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+        std::vector<Expression> expressions;
+        UnionSlice<Block> body;
     };
 
     enum class Visibility { NONE, LOCAL, GLOBAL };
@@ -602,100 +460,69 @@ namespace teal::parser::ast {
         }
     }
 
-    struct FunctionDeclarationStatement : Statement {
+    struct FunctionDeclarationStatement : StatementNode {
         Visibility visibility;
         std::vector<std::string_view> name_path;
         std::string_view method_name;
         bool is_method;
         bool is_macro;
-        Pointer<FunctionBody> body;
-
-        FunctionDeclarationStatement(const Token &tk, Visibility vis) : Statement(tk), visibility(vis), is_method(false)
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+        UnionSlice<FunctionBody> body;
     };
-    struct VariableDeclarationStatement : Statement {
+    struct VariableDeclarationStatement : StatementNode {
         Visibility visibility;
         struct Name { // name with optional attribute (for <attr>)
             std::string_view name;
-            std::optional<std::string_view> attribute;
-
-            serialisation::Object serialise() const;
+            std::optional<std::string_view> attribute;            
         };
         std::vector<Name> names;
-        std::vector<Pointer<TypeNode>> types;
-        std::vector<Pointer<Expression>> values;
-
-        VariableDeclarationStatement(const Token &tk, Visibility vis) : Statement(tk), visibility(vis) { }
-
-        virtual serialisation::Object serialise() const override;
+        std::vector<Type> types;
+        std::vector<Expression> values;
     };
 
-    struct RecordDeclarationStatement : Statement {
+    struct RecordDeclarationStatement : StatementNode {
         bool is_interface;
         Visibility visibility;
         std::string_view name;
-        Pointer<RecordBody> body;
-
-        RecordDeclarationStatement(
-            const Token &tk, bool interface, Visibility vis, std::string_view n, Pointer<RecordBody> &&b) :
-            Statement(tk), is_interface(interface), visibility(vis), name(std::move(n)), body(std::move(b))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+        UnionSlice<RecordBody> body;
     };
     struct EnumBody : ASTNode {
         std::vector<std::string_view> elements;
-
-        EnumBody(const Token &tk) : ASTNode(tk) { }
-
-        virtual serialisation::Object serialise() const override;
     };
-    struct EnumDeclarationStatement : Statement {
+    struct EnumDeclarationStatement : StatementNode {
         Visibility visibility;
         std::string_view name;
-        Pointer<EnumBody> body;
-
-        EnumDeclarationStatement(const Token &tk, Visibility vis, std::string_view n, Pointer<EnumBody> &&b) :
-            Statement(tk), visibility(vis), name(std::move(n)), body(std::move(b))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+        UnionSlice<EnumBody> body;
     };
-    struct TypeAliasStatement : Statement {
+    struct TypeAliasStatement : StatementNode {
         Visibility visibility;
         std::string_view name;
         std::vector<GenericTypeParameter> type_parameters;
-        Pointer<TypeNode> type;
-
-        TypeAliasStatement(const Token &tk, Visibility vis, std::string_view n,
-            std::vector<GenericTypeParameter> &&tparams, Pointer<TypeNode> &&val) :
-            Statement(tk), visibility(vis), name(std::move(n)), type_parameters(std::move(tparams)),
-            type(std::move(val))
-        {
-        }
-
-        virtual serialisation::Object serialise() const override;
+        Type type;
     };
-    struct AssignmentStatement : Statement {
-        std::vector<Pointer<Expression>> left;
-        std::vector<Pointer<Expression>> right;
-
-        AssignmentStatement(const Token &tk) : Statement(tk) { }
-
-        virtual serialisation::Object serialise() const override;
+    struct AssignmentStatement : StatementNode {
+        std::vector<Expression> left, right;
     };
 
-    struct CallStatement : Statement {
-        Pointer<FunctionCallExpression> call;
-        CallStatement(const Token &tk, Pointer<FunctionCallExpression> &&c) : Statement(tk), call(std::move(c))
-        {
-        }
+    struct CallStatement : StatementNode {
+        Expression call;
+    };
 
-        virtual serialisation::Object serialise() const override;
+    using ASTData = UnionOf_t<
+        Expression,
+        Statement,
+        Type,
+
+        //not categorised
+        Union <
+            FunctionBody,
+            RecordBody,
+            EnumBody
+        >
+    >;
+    struct AST : public ASTData {
+        const Token &token;
+        AST(const Token &tk, ASTData &&data) :
+            ASTData(std::move(data)), token(tk)
+        { }
     };
 }
