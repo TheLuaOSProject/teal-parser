@@ -16,5 +16,6 @@
 				"clangd.path": "/usr/bin/clangd"
 			}
 		}
-	}
+	},
+	"postAttachCommand": "xmake config --mode=debug --toolchain=clang && xmake project -k compile_commands --lsp=clangd"
 }

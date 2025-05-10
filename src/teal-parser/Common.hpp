@@ -43,6 +43,29 @@ namespace teal::parser
     template <typename... T>
     Overload(T...) -> Overload<T...>;
 
+    template<typename T>
+    class Storage {
+    private:
+        alignas(alignof(T)) std::byte _data[sizeof(T)];
+
+    public:
+        Storage() = default;
+        Storage(const Storage &) = delete;
+        Storage(Storage &&) = delete;
+
+        template<typename... Args>
+        constexpr Storage<T> &operator =(Args &&...args)
+        {
+            new (&_data) T(std::forward<Args>(args)...);
+            return *this;
+        }
+
+        ~Storage() { reinterpret_cast<T *>(&_data)->~T(); }
+
+        constexpr T &get() { return *reinterpret_cast<T *>(&_data); }
+        constexpr const T &get() const { return *reinterpret_cast<const T *>(&_data); }
+    };
+
     template <typename TVariant>
     static constexpr inline auto typematch(TVariant &&v) -> decltype(auto)
     {
@@ -606,7 +629,7 @@ namespace teal::parser
         // Check current type state
         template <typename T>
             requires is_in_type_list<T, SubTs...>
-        bool holds_alternative() const noexcept
+        bool is() const noexcept
         {
             return *_index_ptr == _orig_indices[allowed_index_of<T>()];
         }

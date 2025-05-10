@@ -265,9 +265,11 @@ namespace teal::parser::ast {
 
     struct BinaryOperationExpression : ExpressionNode {
         Expression left, right;
+        TokenType operation;
     };
     struct UnaryOperationExpression : ExpressionNode {
         Expression operand;
+        TokenType operation;
     };
     
 
@@ -355,19 +357,6 @@ namespace teal::parser::ast {
         std::vector<Type> interface_ext;
         Expression where_clause;
 
-    // todo: Turn this into `std::variant`
-        // struct Entry {
-        //     enum class Kind { FIELD, USERDATA, TYPE_ALIAS, RECORD, ENUM, INTERFACE } entry_kind;
-        //     bool is_metamethod;
-        //     std::optional<std::string_view> name;
-        //     std::optional<std::string_view> key_literal;
-        //     Type type;
-        //     std::string_view type_name;
-        //     Type type_value;
-        //     std::string_view nested_name;
-        //     Pointer<ASTNode> nested_body;
-        // };
-
         struct Userdata {};
         struct TypeAlias {
             std::string_view name;
@@ -423,7 +412,7 @@ namespace teal::parser::ast {
             Statement block;
         };
         std::vector<IfBranch> if_branches;
-        UnionSlice<Block> else_block;
+        std::optional<UnionSlice<Block>> else_block;
     };
     struct WhileStatement : StatementNode {
         Expression condition;
@@ -436,7 +425,8 @@ namespace teal::parser::ast {
     struct ForNumericStatement : StatementNode {
         std::string_view variable_name;
         struct {
-            Expression start, end, step;
+            Expression start, end;
+            std::optional<Expression> step;
         } expressions;
         UnionSlice<Block> body;
     };
@@ -504,7 +494,7 @@ namespace teal::parser::ast {
     };
 
     struct CallStatement : StatementNode {
-        Expression call;
+        FunctionCallExpression call;
     };
 
     using ASTData = UnionOf_t<

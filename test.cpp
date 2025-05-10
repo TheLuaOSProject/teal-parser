@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    std::println("{} blocks", root->statements.size());
+    std::println("{} blocks", root.value().get().statements.size());
 
     {return 0;}
 
