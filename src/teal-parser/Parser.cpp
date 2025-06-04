@@ -117,17 +117,17 @@ std::optional<ast::Statement> Parser::parse_stat()
 std::optional<UnionSlice<ast::AssignmentStatement, ast::CallStatement>> Parser::parse_assignment_or_call()
 {
     const Token &prefix_tk = peek_token();
-    auto prefix = parse_prefix_expression();
+    bool called = false;
+    auto prefix = parse_prefix_expression(&called);
     if (not prefix) {
         skip_to_next_statement();
         return nullopt;
     }
     auto val = prefix.value();
     if (check(TokenType::ASSIGN) or check(TokenType::COMMA)) {
-        if (val.is<ast::FunctionCallExpression>()) {
+        if (called) {
             push_error(UnexpectedFunctionCall());
             skip_to_next_statement();
-            // return nullopt;
             prefix = make_node(NameExpression { .name = "ERROR" });
         }
         
@@ -152,14 +152,14 @@ std::optional<UnionSlice<ast::AssignmentStatement, ast::CallStatement>> Parser::
             push_error(ExpectedExpression(tk));
         return assign;
     } else {
-    //     auto call_expression = dynamic_cast<FunctionCallExpression *>(prefix.get());
-        if (not val.is<ast::FunctionCallExpression>()) {
+        if (!called) {
             push_error(UnexpectedExpression(prefix_tk));
             skip_to_next_statement();
             return nullopt;
         }
-        
-        return make_node(CallStatement { .call = val.get<ast::FunctionCallExpression>() });
+
+        auto call_expr = val.get_unsafe<ast::FunctionCallExpression>();
+        return make_node(CallStatement { .call = call_expr });
     }
 
 }
@@ -668,9 +668,10 @@ std::vector<ast::Expression> Parser::parse_expression_list()
     return exprs;
 }
 
-std::optional<ast::PrefixExpression> Parser::parse_prefix_expression()
+std::optional<ast::PrefixExpression> Parser::parse_prefix_expression(bool *is_call)
 {
     std::optional<ast::PrefixExpression> base;
+    bool called = false;
     if (match(TokenType::L_PAREN)) {
         base = parse_expression();
         consume(TokenType::R_PAREN);
@@ -706,6 +707,7 @@ std::optional<ast::PrefixExpression> Parser::parse_prefix_expression()
                 push_error(ExpectedArguments());
                 // $push_error("expected arguments after method call");
             }
+            called = true;
             base = make_node(FunctionCallExpression {
                 .base = base.value(),
                 .method_name = method,
@@ -715,6 +717,7 @@ std::optional<ast::PrefixExpression> Parser::parse_prefix_expression()
             auto args = std::vector<Expression>();
             if (not check(TokenType::R_PAREN)) { args = parse_expression_list(); }
             consume(TokenType::R_PAREN);
+            called = true;
             base = make_node(FunctionCallExpression {
                 .base = base.value(),
                 .method_name = "",
@@ -722,6 +725,7 @@ std::optional<ast::PrefixExpression> Parser::parse_prefix_expression()
             });
         } else if (check(TokenType::L_BRACE)) {
             auto table_arg = parse_table_constructor();
+            called = true;
             base = make_node(FunctionCallExpression {
                 .base = base.value(),
                 .method_name = "",
@@ -730,6 +734,7 @@ std::optional<ast::PrefixExpression> Parser::parse_prefix_expression()
         } else if (check(TokenType::STRING)) {
             auto lit = peek_token().text;
             _pos++;
+            called = true;
             base = make_node(FunctionCallExpression {
                 .base = base.value(),
                 .method_name = "",
@@ -786,12 +791,13 @@ std::optional<ast::PrefixExpression> Parser::parse_prefix_expression()
             break;
         }
     }
+    if (is_call) *is_call = called;
     return base;
 }
 
 std::optional<ast::PrefixExpression> Parser::parse_var_expression()
 {
-    auto expr = parse_prefix_expression();
+    auto expr = parse_prefix_expression(nullptr);
     if (not expr) return nullopt;
     if (expr->is<ast::FunctionCallExpression>()) {
         // $push_error("unexpected function call in assignment");
@@ -835,7 +841,7 @@ std::optional<ast::PrimaryExpression> Parser::parse_primary_expression()
     if (t == TokenType::FUNCTION) { return parse_function_def_expression(); }
     if (t == TokenType::L_BRACE) { return parse_table_constructor(); }
     if (t == TokenType::NAME or t == TokenType::L_PAREN or Token::type_is_teal_keyword(t)) {
-        return parse_prefix_expression();
+        return parse_prefix_expression(nullptr);
     }
     // $push_error(std::format("unexpected token `{}` (type: {}) in expression", peek_token().text, peek_token().type));
     push_error(UnexpectedToken(peek_token()));

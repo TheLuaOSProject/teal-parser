@@ -116,3 +116,34 @@ end
     const Block &blk = ast_opt.value().get();
     CHECK_FALSE(blk.statements.empty());
 }
+
+TEST_CASE("parser call statement") {
+    std::string_view src = R"(
+print("hi")
+)";
+    Lexer lex(src);
+    auto [tks, lex_errs] = lex.tokenize();
+    REQUIRE(lex_errs.empty());
+    Parser parser(tks);
+    auto [ast_opt, parse_errs] = parser.parse();
+    REQUIRE(parse_errs.empty());
+    REQUIRE(ast_opt.has_value());
+    const Block &blk = ast_opt.value().get();
+    CHECK_EQ(blk.statements.size(), 1);
+}
+
+TEST_CASE("parser method call statement") {
+    std::string_view src = R"(
+io.stderr:write("hi")
+)";
+    Lexer lex(src);
+    auto [tks, lex_errs] = lex.tokenize();
+    REQUIRE(lex_errs.empty());
+    Parser parser(tks);
+    auto [ast_opt, parse_errs] = parser.parse();
+    REQUIRE(parse_errs.empty());
+    REQUIRE(ast_opt.has_value());
+    const Block &blk = ast_opt.value().get();
+    CHECK_EQ(blk.statements.size(), 1);
+}
+
