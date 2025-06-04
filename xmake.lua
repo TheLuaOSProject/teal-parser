@@ -14,6 +14,8 @@ target("teal-parser")
         "-stdlib=libc++",
         "-fexperimental-library"
     )
+
+    add_ldflags("-stdlib=libc++", "-fexperimental-library")
 target_end()
 
 target("test")
@@ -25,5 +27,6 @@ target("test")
         "-stdlib=libc++",
         "-fexperimental-library"
     )
+    add_ldflags("-stdlib=libc++", "-fexperimental-library")
 
     add_deps("teal-parser")
