@@ -626,20 +626,6 @@ namespace teal::parser
             return { TokenType::NAME, name, start_line, start_col };
         }
 
-    public:
-        class Tests {
-        public:
-            void basic_keyword();
-            void numbers();
-            void strings();
-            void long_string();
-            void long_comment();
-            void mixed_tokens();
-            void unterminated_string();
-            void invalid_long_string_delimiter();
-
-            void run_all();
-        };
     };
 
 } // namespace teal::parser

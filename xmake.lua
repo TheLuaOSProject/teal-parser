@@ -20,7 +20,7 @@ target_end()
 
 target("test")
     set_kind("binary")
-    add_files("test.cpp")
+    add_files("tests/**.cpp")
     add_cxxflags(
         "-Wall", "-Wextra", "-Werror",
         "-Wno-c23-extensions",
