@@ -1383,9 +1383,10 @@ UnionSlice<ast::RecordBody> Parser::parse_record_body()
     }
     auto rb = make_node(RecordBody {
         .type_parameters = type_parameters,
+        .structural_ext = std::nullopt,
+        .interface_ext = std::vector<Type>(),
+        .where_clause = std::nullopt,
         .entries = std::vector<RecordBody::Entry>(),
-        .structural_ext = nullptr,
-        .where_clause = nullptr,
     });
     if (match(TokenType::IS)) { parse_interface_list(rb); }
     if (match(TokenType::WHERE)) {
@@ -1433,10 +1434,6 @@ UnionSlice<ast::RecordBody> Parser::parse_record_body()
                 _pos++;
             }
             auto body = parse_record_body();
-            if (not body) {
-                // $push_error("expected record body after 'record'");
-                push_error(ExpectedToken(TokenType::NAME, peek_token()));
-            }
             rb->entries.emplace_back(RecordBody::Record {
                 .name = type_name,
                 .body = body,
@@ -1447,29 +1444,32 @@ UnionSlice<ast::RecordBody> Parser::parse_record_body()
             continue;
         }
         if (match(TokenType::ENUM)) {
+            std::string_view enum_name = "<unnamed>";
             if (not check(TokenType::NAME)) {
                 // $push_error("expected name after 'enum'");
                 push_error(ExpectedToken(TokenType::NAME, peek_token()));
             } else {
-                entry.nested_name = peek_token().text;
+                enum_name = peek_token().text;
                 _pos++;
             }
-            entry.nested_body = parse_enum_body();
-            entry.entry_kind = RecordBody::Entry::Kind::ENUM;
-            rb->entries.push_back(std::move(entry));
+            auto enum_body = parse_enum_body();
+            rb->entries.emplace_back(RecordBody::Enum {
+                .name = enum_name,
+                .body = enum_body,
+            });
             continue;
         }
         if (match(TokenType::INTERFACE)) {
+            std::string_view iface_name = "<unnamed>";
             if (not check(TokenType::NAME)) {
                 // $push_error(std::format("expected name after 'interface', got {}", peek_token()));
                 push_error(ExpectedToken(TokenType::NAME, peek_token()));
             } else {
-                entry.nested_name = peek_token().text;
+                iface_name = peek_token().text;
                 _pos++;
             }
-            entry.nested_body = parse_record_body();
-            entry.entry_kind = RecordBody::Entry::Kind::INTERFACE;
-            rb->entries.push_back(std::move(entry));
+            auto iface_body = parse_record_body();
+            rb->entries.emplace_back(RecordBody::Interface { { iface_name, iface_body } });
             continue;
         }
         bool is_meta = false;
@@ -1477,15 +1477,16 @@ UnionSlice<ast::RecordBody> Parser::parse_record_body()
             _pos++;
             is_meta = true;
         }
+        std::string_view field_name = "";
         if (check(TokenType::NAME)) {
-            entry.name = peek_token().text;
+            field_name = peek_token().text;
             _pos++;
         } else if (match(TokenType::L_BRACKET)) {
             if (not check(TokenType::STRING)) {
                 // $push_error("expected literal string key in record field");
                 push_error(ExpectedToken(TokenType::STRING, peek_token()));
             } else {
-                entry.key_literal = peek_token().text;
+                field_name = peek_token().text;
                 _pos++;
             }
             consume(TokenType::R_BRACKET);
@@ -1497,16 +1498,22 @@ UnionSlice<ast::RecordBody> Parser::parse_record_body()
             continue;
         }
         consume(TokenType::COLON);
-        entry.type = parse_type();
-        entry.is_metamethod = is_meta;
-        entry.entry_kind = RecordBody::Entry::Kind::FIELD;
-        rb->entries.push_back(std::move(entry));
+        auto field_type = parse_type();
+        if (not field_type) {
+            push_error(ExpectedToken(TokenType::NAME, peek_token()));
+            continue;
+        }
+        rb->entries.emplace_back(RecordBody::Field {
+            .is_metamethod = is_meta,
+            .name = field_name,
+            .type = field_type.value(),
+        });
     }
     consume(TokenType::END);
     return rb;
 }
 
-ast::Pointer<EnumBody> Parser::parse_enum_body()
+UnionSlice<ast::EnumBody> Parser::parse_enum_body()
 {
     auto body = make_node<EnumBody>();
     while (not check(TokenType::END) and not is_at_end()) {
@@ -1526,7 +1533,7 @@ ast::Pointer<EnumBody> Parser::parse_enum_body()
     return body;
 }
 
-void Parser::parse_interface_list(RecordBody *rb)
+void Parser::parse_interface_list(UnionSlice<RecordBody> rb)
 {
     if (match(TokenType::L_BRACE)) {
         rb->structural_ext = parse_type();
@@ -1534,7 +1541,7 @@ void Parser::parse_interface_list(RecordBody *rb)
         if (match(TokenType::COMMA)) {
             do {
                 auto nom = parse_nominal_type();
-                if (nom) rb->interface_ext.push_back(std::move(nom));
+                if (nom) rb->interface_ext.push_back(nom.value());
                 else {
                     // $push_error("expected interface name");
                     push_error(ExpectedToken(TokenType::NAME, peek_token()));
@@ -1544,11 +1551,11 @@ void Parser::parse_interface_list(RecordBody *rb)
         }
     } else {
         auto nom = parse_nominal_type();
-        if (nom) rb->interface_ext.push_back(std::move(nom));
+        if (nom) rb->interface_ext.push_back(nom.value());
         else push_error(ExpectedToken(TokenType::NAME, peek_token()));
         while (match(TokenType::COMMA)) {
             auto nom2 = parse_nominal_type();
-            if (nom2) rb->interface_ext.push_back(std::move(nom2));
+            if (nom2) rb->interface_ext.push_back(nom2.value());
             else {
                 push_error(ExpectedToken(TokenType::NAME, peek_token()));
                 break;
