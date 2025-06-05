@@ -18,8 +18,11 @@ target("teal-parser")
     add_ldflags("-stdlib=libc++", "-fexperimental-library")
 target_end()
 
+add_requires("doctest")
+
 target("test")
     set_kind("binary")
+    add_packages("doctest")
     add_files("tests/**.cpp")
     add_cxxflags(
         "-Wall", "-Wextra", "-Werror",
@@ -29,4 +32,17 @@ target("test")
     )
     add_ldflags("-stdlib=libc++", "-fexperimental-library")
 
+    add_deps("teal-parser")
+target_end()
+
+target("root_test_cpp")
+    set_kind("binary")
+    add_files("test.cpp")
+    add_cxxflags(
+        "-Wall", "-Wextra", "-Werror",
+        "-Wno-c23-extensions",
+        "-stdlib=libc++",
+        "-fexperimental-library"
+    )
+    add_ldflags("-stdlib=libc++", "-fexperimental-library")
     add_deps("teal-parser")
