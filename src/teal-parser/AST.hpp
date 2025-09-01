@@ -205,7 +205,7 @@ namespace teal::parser::ast {
 
     struct Unrepresentable {
         Unrepresentable() = delete;
-        ~Unrepresentable() = delete;
+        ~Unrepresentable() = default;
     };
 
 #define $(n) n,
@@ -353,9 +353,9 @@ namespace teal::parser::ast {
 
     struct RecordBody {
         std::vector<GenericTypeParameter> type_parameters;
-        Type structural_ext;
+        std::optional<Type> structural_ext;
         std::vector<Type> interface_ext;
-        Expression where_clause;
+        std::optional<Expression> where_clause;
 
         struct Userdata {};
         struct TypeAlias {

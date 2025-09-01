@@ -113,7 +113,7 @@ namespace teal::parser
         Parser(std::vector<Token> toks) : max_errors(10), _tokens(std::move(toks)), _pos(0), _nodes()
         {
             //TODO: Change `_nodes` into a custom datastructure that can be "frozen", we cannot have any more reallocations as it would break all pointers
-            _nodes.reserve(_tokens.size());
+            _nodes.reserve(_tokens.size() * 2);
         }
         std::tuple<std::optional<std::reference_wrapper<const ast::Block>>, std::vector<Error>> parse()
         {
@@ -263,7 +263,7 @@ namespace teal::parser
         std::vector<std::string_view> parse_name_list();
         std::optional<ast::Expression> parse_expression();
         std::vector<ast::Expression> parse_expression_list();
-        std::optional<ast::PrefixExpression> parse_prefix_expression();
+        std::optional<ast::PrefixExpression> parse_prefix_expression(bool *is_call = nullptr);
         std::optional<ast::PrefixExpression> parse_var_expression();
         std::optional<ast::PrimaryExpression> parse_primary_expression();
         int get_binary_precedence(TokenType op);

@@ -17,7 +17,7 @@ target("teal-parser")
         "-fexperimental-library"
     )
 
-    -- add_packages("libc++")
+    add_packages("libc++")
 target_end()
 
 target("test")
@@ -30,6 +30,22 @@ target("test")
         "-fexperimental-library"
     )
 
-    -- add_packages("libc++")
+    add_packages("libc++")
 
     add_deps("teal-parser")
+
+target_end()
+
+target("unit_tests")
+    set_kind("binary")
+    add_files("tests/test_main.cpp")
+    add_includedirs("tests", {public = false})
+    add_cxxflags(
+        "-Wall", "-Wextra", "-Werror",
+        "-Wno-c23-extensions",
+        "-stdlib=libc++",
+        "-fexperimental-library"
+    )
+    add_packages("libc++")
+    add_deps("teal-parser")
+target_end()
